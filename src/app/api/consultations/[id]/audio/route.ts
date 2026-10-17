@@ -2,7 +2,8 @@ import type { NextRequest } from "next/server";
 import { error, fromError, json, requireConsultation } from "@/lib/api";
 import { analyze } from "@/lib/consultations";
 
-export const maxDuration = 300;
+// 60 s : limite du plan gratuit de Vercel.
+export const maxDuration = 60;
 
 /**
  * Analyse d'un enregistrement audio (multipart, champ « audio »).

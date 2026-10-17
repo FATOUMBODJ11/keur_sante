@@ -110,8 +110,35 @@ Le jeu de cas est **vide au départ**. Vous l'alimentez depuis la page `/evaluat
 
 ## Données
 
-Le stockage est un fichier JSON (`data/keur-sante.json`, ignoré par git) :
-- le patient n'y est identifié que par un **code pseudonyme** ;
+- **En local**, sans configuration, les données vont dans `data/keur-sante.json` (ignoré par git).
+- **En ligne**, elles vont dans **Postgres (Supabase)** dès que `DATABASE_URL` est défini (`src/lib/store.ts`).
+
+Dans les deux cas :
+- le patient n'est identifié que par un **code pseudonyme** ;
 - chaque action est inscrite dans un **journal d'audit**.
 
-Pour un pilote, il faudra remplacer ce fichier par une vraie base de données.
+## Déploiement sur Vercel avec Supabase
+
+**1. Supabase (la base)**
+1. Créez un projet sur [supabase.com](https://supabase.com). Choisissez une région proche, par exemple `eu-west-3` (Paris), et notez le mot de passe de la base.
+2. *(Facultatif)* Ouvrez **SQL Editor** et exécutez `supabase/schema.sql`. Sinon, l'application crée elle-même ses tables au premier accès.
+3. Cliquez sur **Connect** et copiez la chaîne **Transaction pooler** (port **6543**). Remplacez `[YOUR-PASSWORD]` par le mot de passe de la base.
+
+**2. Vercel (l'application)**
+1. Sur [vercel.com/new](https://vercel.com/new), importez le dépôt GitHub `keur_sante`. Vercel détecte Next.js tout seul.
+2. Avant de cliquer sur **Deploy**, ouvrez **Environment Variables** et ajoutez :
+
+| Variable | Valeur |
+|---|---|
+| `DATABASE_URL` | la chaîne Transaction pooler de Supabase |
+| `KS_SESSION_SECRET` | une longue valeur aléatoire (32 caractères au moins) |
+| `KS_DEMO_ACCOUNT` | `off` si vous ne voulez pas du compte de démonstration en ligne |
+| `KS_LLM_PROVIDER`, `ANTHROPIC_API_KEY` | facultatif : analyse par Claude |
+
+3. Cliquez sur **Deploy**. Ensuite, chaque `git push` sur `main` redéploie automatiquement.
+
+**À savoir :**
+- Les tables Supabase ont la sécurité par ligne (RLS) activée, sans règle d'accès : seule l'application, connectée directement à Postgres, peut lire et écrire. L'API publique de Supabase ne voit rien.
+- Le micro fonctionne en ligne : Vercel sert le site en HTTPS. La dictée passe par le navigateur (Chrome ou Edge).
+- Les serveurs Whisper et Kiriku ne tournent pas sur Vercel. Il faut les héberger ailleurs (machine avec GPU), puis renseigner `ASR_FR_URL` et `ASR_WO_URL`.
+- Prototype : avant d'y mettre de vraies données de patients, vérifiez la conformité avec la loi 2008-12 (CDP) et choisissez un hébergement adapté.

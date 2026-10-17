@@ -13,7 +13,7 @@ export async function POST(_req: NextRequest, ctx: RouteContext<"/api/consultati
     ...g.value.c.steps.filter((s) => s.name !== "archivage"),
     { name: "archivage" as const, status: "done" as const, provider: "humain", duration_ms: null, detail: `Archivé par ${g.value.user.full_name}` },
   ];
-  const c = db.updateConsultation(id, { status: "archived", archived_at: at, steps });
-  db.audit({ user_id: g.value.user.id, action: "consultation_archivee", consultation_id: id, detail: "" });
+  const c = await db.updateConsultation(id, { status: "archived", archived_at: at, steps });
+  await db.audit({ user_id: g.value.user.id, action: "consultation_archivee", consultation_id: id, detail: "" });
   return json(c);
 }

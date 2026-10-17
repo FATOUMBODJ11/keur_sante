@@ -160,7 +160,7 @@ export function summarize(results: CaseResult[], cases: AnnotatedCase[]): EvalSu
 
 export async function runEvaluation(userId: string): Promise<EvalRun> {
   // Wolof en pause : seuls les cas en français sont évalués.
-  const cases = db.listCases().filter((c) => wolofEnabled() || c.language === "fr");
+  const cases = (await db.listCases()).filter((c) => wolofEnabled() || c.language === "fr");
   if (cases.length === 0) {
     throw Object.assign(new Error("Aucun cas annoté en français : ajoutez au moins un cas avant de lancer une évaluation."), { status: 409 });
   }

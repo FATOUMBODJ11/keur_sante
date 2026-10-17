@@ -19,10 +19,10 @@ export async function POST(req: Request) {
   if (facility.length < 2 || facility.length > 160) return error(400, "Indiquez votre structure de santé.");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return error(400, "Adresse e-mail invalide.");
   if (password.length < 8) return error(400, "Le mot de passe doit contenir au moins 8 caractères.");
-  if (db.findUserByEmail(email)) return error(409, "Un compte existe déjà avec cette adresse e-mail.");
+  if (await db.findUserByEmail(email)) return error(409, "Un compte existe déjà avec cette adresse e-mail.");
 
-  const user = db.createUser({ full_name, facility, email, password });
+  const user = await db.createUser({ full_name, facility, email, password });
   await setSession(user.id);
-  db.audit({ user_id: user.id, action: "compte_cree", consultation_id: null, detail: "" });
+  await db.audit({ user_id: user.id, action: "compte_cree", consultation_id: null, detail: "" });
   return json({ user: toPublic(user) }, 201);
 }

@@ -25,8 +25,8 @@ export async function PATCH(req: NextRequest, ctx: RouteContext<"/api/consultati
       soap[k] = v;
       changed.push(k);
     }
-    const updated = db.updateConsultation(id, { soap_final: soap });
-    if (changed.length) db.audit({ user_id: g.value.user.id, action: "soap_modifie", consultation_id: id, detail: changed.join(", ") });
+    const updated = await db.updateConsultation(id, { soap_final: soap });
+    if (changed.length) await db.audit({ user_id: g.value.user.id, action: "soap_modifie", consultation_id: id, detail: changed.join(", ") });
     return json(updated);
   } catch (err) {
     return fromError(err);

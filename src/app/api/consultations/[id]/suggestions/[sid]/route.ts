@@ -18,8 +18,8 @@ export async function PATCH(req: NextRequest, ctx: RouteContext<"/api/consultati
     const suggestions = g.value.c.suggestions.map((s) =>
       s.id === sid ? { ...s, decision, decided_at: new Date().toISOString() } : s,
     );
-    const c = db.updateConsultation(id, { suggestions });
-    db.audit({
+    const c = await db.updateConsultation(id, { suggestions });
+    await db.audit({
       user_id: g.value.user.id,
       action: `suggestion_${decision === "accepted" ? "retenue" : decision === "rejected" ? "ecartee" : "reinitialisee"}`,
       consultation_id: id,

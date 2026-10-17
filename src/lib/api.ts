@@ -32,7 +32,7 @@ export async function requireUser(): Promise<Guarded<User>> {
 export async function requireConsultation(id: string): Promise<Guarded<{ user: User; c: Consultation }>> {
   const u = await requireUser();
   if (!u.ok) return u;
-  const c = db.getConsultation(id);
+  const c = await db.getConsultation(id);
   if (!c || c.doctor_id !== u.value.id) return { ok: false, response: error(404, "Consultation introuvable") };
   return { ok: true, value: { user: u.value, c } };
 }

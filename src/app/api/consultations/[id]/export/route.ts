@@ -51,6 +51,6 @@ export async function GET(_req: NextRequest, ctx: RouteContext<"/api/consultatio
   if (!g.ok) return g.response;
   const { c, user } = g.value;
   if (c.status !== "validated" && c.status !== "archived") return error(409, "Export réservé aux comptes rendus validés.");
-  db.audit({ user_id: user.id, action: "compte_rendu_exporte", consultation_id: id, detail: "" });
+  await db.audit({ user_id: user.id, action: "compte_rendu_exporte", consultation_id: id, detail: "" });
   return json({ text: report(c, user.facility) });
 }

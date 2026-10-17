@@ -5,16 +5,16 @@ import { db } from "@/lib/store";
 export async function GET() {
   const u = await requireUser();
   if (!u.ok) return u.response;
-  return json(db.listConsultations(u.value.id));
+  return json(await db.listConsultations(u.value.id));
 }
 
 export async function POST(req: Request) {
   const u = await requireUser();
   if (!u.ok) return u.response;
   try {
-    const c = newConsultation(u.value, await req.json().catch(() => ({})));
-    db.insertConsultation(c);
-    db.audit({
+    const c = await newConsultation(u.value, await req.json().catch(() => ({})));
+    await db.insertConsultation(c);
+    await db.audit({
       user_id: u.value.id,
       action: "consultation_ouverte",
       consultation_id: c.id,

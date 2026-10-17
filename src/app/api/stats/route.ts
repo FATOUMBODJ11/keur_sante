@@ -5,7 +5,7 @@ import type { Stats } from "@/lib/types";
 export async function GET() {
   const u = await requireUser();
   if (!u.ok) return u.response;
-  const list = db.listConsultations(u.value.id);
+  const list = await db.listConsultations(u.value.id);
   const par_statut: Stats["par_statut"] = {};
   for (const c of list) par_statut[c.status] = (par_statut[c.status] ?? 0) + 1;
   const dx = list.flatMap((c) => c.suggestions).filter((s) => s.type === "diagnostic");

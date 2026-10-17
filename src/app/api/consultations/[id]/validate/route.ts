@@ -7,7 +7,7 @@ export async function POST(_req: NextRequest, ctx: RouteContext<"/api/consultati
   const g = await requireConsultation(id);
   if (!g.ok) return g.response;
   try {
-    return json(validate(g.value.c, g.value.user));
+    return json(await validate(g.value.c, g.value.user));
   } catch (err) {
     return fromError(err);
   }

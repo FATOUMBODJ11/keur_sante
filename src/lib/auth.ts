@@ -70,5 +70,5 @@ export async function clearSession() {
 
 export async function currentUser(): Promise<User | null> {
   const uid = readToken((await cookies()).get(SESSION_COOKIE)?.value);
-  return uid ? (db.findUser(uid) ?? null) : null;
+  return uid ? ((await db.findUser(uid)) ?? null) : null;
 }

@@ -7,13 +7,19 @@ import type { PublicUser, User } from "@/lib/types";
 export const SESSION_COOKIE = "ks_session";
 const MAX_AGE = 60 * 60 * 12; // 12 h : une journée de consultation
 
-function secret(): string {
+/** Problème de configuration du secret de session, ou null si tout va bien. */
+export function sessionSecretProblem(): string | null {
   const s = process.env.KS_SESSION_SECRET;
-  if (s) return s;
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("KS_SESSION_SECRET doit être défini en production");
-  }
-  return "keur-sante-dev-secret-ne-pas-utiliser-en-production";
+  if (process.env.NODE_ENV !== "production") return null;
+  if (!s) return "La variable KS_SESSION_SECRET n'est pas définie sur le serveur (Vercel → Settings → Environment Variables), puis redéployez.";
+  if (s.length < 32) return "KS_SESSION_SECRET est trop court : 32 caractères au moins.";
+  return null;
+}
+
+function secret(): string {
+  const problem = sessionSecretProblem();
+  if (problem) throw Object.assign(new Error(problem), { status: 503 });
+  return process.env.KS_SESSION_SECRET || "keur-sante-dev-secret-ne-pas-utiliser-en-production";
 }
 
 function sign(payload: string) {
@@ -69,6 +75,7 @@ export async function clearSession() {
 }
 
 export async function currentUser(): Promise<User | null> {
+  if (sessionSecretProblem()) return null;
   const uid = readToken((await cookies()).get(SESSION_COOKIE)?.value);
   return uid ? ((await db.findUser(uid)) ?? null) : null;
 }

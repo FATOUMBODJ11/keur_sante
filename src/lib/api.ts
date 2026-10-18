@@ -1,7 +1,7 @@
 import "server-only";
 import { NextResponse } from "next/server";
 import { currentUser } from "@/lib/auth";
-import { db } from "@/lib/store";
+import { db, describeDbError } from "@/lib/store";
 import type { Consultation, User } from "@/lib/types";
 
 export function json<T>(data: T, status = 200) {
@@ -15,7 +15,9 @@ export function error(status: number, message: string) {
 /** Convertit une exception métier (avec `status`) en réponse JSON. */
 export function fromError(err: unknown) {
   const status = typeof (err as { status?: unknown })?.status === "number" ? (err as { status: number }).status : 500;
-  const message = err instanceof Error ? err.message : "Erreur inattendue";
+  const hasStatus = typeof (err as { status?: unknown })?.status === "number";
+  // Erreurs techniques (base…) : message lisible, sans jamais exposer la chaîne de connexion.
+  const message = hasStatus && err instanceof Error ? err.message : describeDbError(err);
   if (status >= 500) console.error(err);
   return error(status, message);
 }

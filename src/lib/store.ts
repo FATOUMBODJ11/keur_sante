@@ -161,6 +161,50 @@ const backend = (): Backend => (g.__ksBackend ??= dbUrl ? pgBackend(dbUrl) : fil
 
 export const storageKind = () => (dbUrl ? "postgres" : "fichier");
 
+/** Erreurs fréquentes de chaîne de connexion Supabase, détectées sans se connecter. */
+function urlHint(url: string): string | null {
+  if (/\[YOUR-PASSWORD\]|\[|\]/.test(url)) return "DATABASE_URL contient encore « [YOUR-PASSWORD] » ou des crochets : remplacez-les par le mot de passe de la base.";
+  if (/@db\.[a-z0-9]+\.supabase\.co/.test(url)) return "DATABASE_URL utilise la connexion directe (db.….supabase.co) : prenez la chaîne « Shared pooler / Transaction pooler » (….pooler.supabase.com:6543).";
+  if (/pooler\.supabase\.com:5432/.test(url)) return "DATABASE_URL utilise le port 5432 (mode session) : prenez le port 6543 (mode transaction).";
+  if (/pooler\.supabase\.com/.test(url) && /\/\/postgres:/.test(url)) return "Avec le pooler, l'utilisateur doit être « postgres.<identifiant-du-projet> » et non « postgres ».";
+  return null;
+}
+
+/** Vérifie la base : chaîne de connexion plausible, connexion et création des tables. */
+export async function checkDatabase(): Promise<{ kind: string; ok: boolean; message: string }> {
+  if (!dbUrl) {
+    return {
+      kind: "fichier",
+      ok: process.env.NODE_ENV !== "production",
+      message:
+        process.env.NODE_ENV === "production"
+          ? "DATABASE_URL n'est pas défini : en ligne, les données seraient perdues. Ajoutez la chaîne Supabase dans Vercel puis redéployez."
+          : "Stockage local (data/keur-sante.json).",
+    };
+  }
+  const hint = urlHint(dbUrl);
+  if (hint) return { kind: "postgres", ok: false, message: hint };
+  try {
+    await backend().list("users");
+    return { kind: "postgres", ok: true, message: "Connexion à Postgres réussie, tables prêtes." };
+  } catch (err) {
+    return { kind: "postgres", ok: false, message: describeDbError(err) };
+  }
+}
+
+/** Message d'erreur de base de données lisible, sans jamais révéler la chaîne de connexion. */
+export function describeDbError(err: unknown): string {
+  const e = err as { code?: string; message?: string };
+  const hint = dbUrl ? urlHint(dbUrl) : null;
+  if (hint) return hint;
+  const msg = (e?.message ?? String(err)).replace(/postgres(ql)?:\/\/\S+/g, "[chaîne masquée]");
+  if (e?.code === "28P01" || /password authentication failed/i.test(msg)) return "Mot de passe de la base refusé : vérifiez celui placé dans DATABASE_URL (ou réinitialisez-le dans Supabase).";
+  if (/tenant(\/| or )user .*not found/i.test(msg)) return "Utilisateur inconnu du pooler : l'utilisateur doit être « postgres.<identifiant-du-projet> ».";
+  if (e?.code === "ENOTFOUND" || /getaddrinfo/i.test(msg)) return "Adresse de la base introuvable : vérifiez l'hôte dans DATABASE_URL.";
+  if (/timeout|ETIMEDOUT|ECONNREFUSED/i.test(msg)) return "La base ne répond pas : vérifiez l'hôte et le port (6543) de DATABASE_URL.";
+  return `Erreur de base de données : ${msg}`;
+}
+
 export function hashPassword(password: string, salt = randomBytes(16).toString("hex")): string {
   return `${salt}:${scryptSync(password, salt, 32).toString("hex")}`;
 }

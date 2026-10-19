@@ -1,4 +1,4 @@
-import type { Extraction, Lang, LangPref, Providers, Soap, Step, StepName, Suggestion, Turn } from "@/lib/types";
+import type { Extraction, Lang, LangPref, PatientContext, Providers, Soap, Step, StepName, Suggestion, Turn } from "@/lib/types";
 import { AsrUnavailableError, asrConfig, asrProviderName, transcribe } from "./asr";
 import { extractWithLlm, extractWithRules } from "./extract";
 import { detectLanguage } from "./language";
@@ -27,6 +27,8 @@ export interface AgentInput {
   languagePref: LangPref;
   /** Fournisseur de la transcription quand elle arrive déjà sous forme de texte. */
   transcriptProvider?: string;
+  /** Dossier du patient (âge, allergies, antécédents…), pris en compte par l'analyse. */
+  patient?: PatientContext;
 }
 
 export interface AgentOutput {
@@ -160,8 +162,8 @@ export async function runAgent(input: AgentInput): Promise<AgentOutput> {
   /* 5. Pistes diagnostiques */
   const t5 = performance.now();
   const sg = await withFallback(
-    () => suggestWithLlm(extraction, transcriptFr),
-    () => suggestWithKnowledgeBase(extraction, transcriptFr),
+    () => suggestWithLlm(extraction, transcriptFr, input.patient),
+    () => suggestWithKnowledgeBase(extraction, transcriptFr, input.patient),
     "base de connaissances v1",
   );
   const suggestions = sg.value;
@@ -176,7 +178,7 @@ export async function runAgent(input: AgentInput): Promise<AgentOutput> {
 
   /* 6. SOAP */
   const t6 = performance.now();
-  const soap = buildSoap(extraction, suggestions);
+  const soap = buildSoap(extraction, suggestions, input.patient);
   trace.set("generation_soap", { status: "done", provider: "gabarit SOAP v1", duration_ms: since(t6), detail: "S, O, A, P" });
 
   /* 7. Validation : l'agent s'arrête ici, la suite appartient au médecin. */

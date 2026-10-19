@@ -1,7 +1,16 @@
-import type { Extraction, Soap, Suggestion } from "@/lib/types";
+import type { Extraction, PatientContext, Soap, Suggestion } from "@/lib/types";
 
 const join = (xs: string[], sep = "; ") => xs.filter(Boolean).join(sep);
 const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+
+function dossier(p?: PatientContext): string {
+  if (!p) return "";
+  const parts: string[] = [];
+  if (p.allergies.length) parts.push(`allergies : ${join(p.allergies, ", ")}`);
+  if (p.antecedents.length) parts.push(`antécédents : ${join(p.antecedents, ", ")}`);
+  if (p.traitements.length) parts.push(`traitements au long cours : ${join(p.traitements, ", ")}`);
+  return parts.length ? ` Dossier patient — ${join(parts)}.` : "";
+}
 
 function subjective(ex: Extraction): string {
   const parts: string[] = [];
@@ -48,10 +57,10 @@ const byType = (sg: Suggestion[], t: Suggestion["type"]) => sg.filter((s) => s.t
 const byConfidence = (a: Suggestion, b: Suggestion) => (b.confiance ?? 0) - (a.confiance ?? 0);
 
 /** Gabarit SOAP v1 : compte rendu proposé par l'agent avant relecture. */
-export function buildSoap(ex: Extraction, suggestions: Suggestion[]): Soap {
+export function buildSoap(ex: Extraction, suggestions: Suggestion[], patient?: PatientContext): Soap {
   const dx = byType(suggestions, "diagnostic").sort(byConfidence);
   return {
-    S: subjective(ex),
+    S: subjective(ex) + dossier(patient),
     O: objective(ex),
     A: assessment(dx, byType(suggestions, "alerte")),
     P: plan(byType(suggestions, "prise_en_charge")),

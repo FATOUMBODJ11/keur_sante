@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { ALERTS, KNOWLEDGE_BASE, MIN_SCORE, type ClinicalContext } from "@/lib/data/knowledge";
 import { HISTORY_PATTERNS, SYMPTOMS, normalize } from "@/lib/data/lexicon";
-import type { Extraction, Suggestion, Turn } from "@/lib/types";
+import type { Extraction, PatientContext, Suggestion, Turn } from "@/lib/types";
 import { structuredCall } from "./llm";
 import { turnsToText } from "./transcript";
 
@@ -92,6 +92,45 @@ export function rankConditions(ex: Extraction, turnsFr: Turn[] = []): Ranked[] {
     .sort((a, b) => b.score - a.score);
 }
 
+/** Familles de médicaments : une allergie déclarée couvre aussi les molécules de la famille. */
+const DRUG_FAMILIES: Record<string, string[]> = {
+  "penicilline": ["amoxicilline", "ampicilline", "penicilline", "augmentin", "cloxacilline"],
+  "sulfamide": ["cotrimoxazole", "sulfamethoxazole", "sulfadoxine"],
+  "ains": ["ibuprofene", "diclofenac", "aspirine", "ketoprofene", "ains"],
+  "aspirine": ["aspirine"],
+  "quinolone": ["ciprofloxacine", "levofloxacine", "ofloxacine"],
+};
+const strip = (x: string) => normalize(x).normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+/** Signale toute suggestion de prise en charge qui contient un médicament auquel le patient est allergique. */
+export function allergyAlerts(suggestions: Suggestion[], patient?: PatientContext): Suggestion[] {
+  if (!patient?.allergies.length) return [];
+  const out: Suggestion[] = [];
+  for (const allergy of patient.allergies) {
+    const a = strip(allergy);
+    const family = Object.entries(DRUG_FAMILIES).find(([k, v]) => a.includes(k) || v.some((d) => a.includes(d)));
+    const terms = family ? family[1] : [a];
+    for (const s of suggestions.filter((x) => x.type === "prise_en_charge")) {
+      const label = strip(s.label);
+      const hit = terms.find((t) => t.length > 3 && label.includes(t));
+      if (hit) {
+        out.push({
+          id: sid(),
+          type: "alerte",
+          label: `Allergie connue « ${allergy} » : la suggestion « ${s.label} » contient ${hit}. Vérifiez avant toute prescription.`,
+          code: null,
+          confiance: null,
+          arguments_pour: [],
+          arguments_contre: [],
+          lie_a: null,
+          decision: "pending",
+        });
+      }
+    }
+  }
+  return out;
+}
+
 function alerts(ctx: ClinicalContext): Suggestion[] {
   return ALERTS.filter((a) => a.test(ctx)).map((a) => ({
     id: sid(),
@@ -107,7 +146,16 @@ function alerts(ctx: ClinicalContext): Suggestion[] {
 }
 
 /** Pistes diagnostiques (3 max), signes d'alerte et prise en charge du diagnostic principal. */
-export function suggestWithKnowledgeBase(ex: Extraction, turnsFr: Turn[] = []): Suggestion[] {
+export function suggestWithKnowledgeBase(ex: Extraction, turnsFr: Turn[] = [], patient?: PatientContext): Suggestion[] {
+  return withAllergyAlerts(suggestFromRules(ex, turnsFr), patient);
+}
+
+function withAllergyAlerts(list: Suggestion[], patient?: PatientContext): Suggestion[] {
+  const extra = allergyAlerts(list, patient);
+  return [...extra, ...list];
+}
+
+function suggestFromRules(ex: Extraction, turnsFr: Turn[]): Suggestion[] {
   const ctx = buildContext(ex, turnsFr);
   const ranked = rankConditions(ex, turnsFr).slice(0, 3);
   const out: Suggestion[] = alerts(ctx);
@@ -169,22 +217,43 @@ function protocolDigest(): string {
   ).join("\n");
 }
 
-const SYSTEM = `Tu assistes un médecin de soins primaires au Sénégal. Tu proposes des pistes diagnostiques et une prise en charge, qui seront TOUTES relues, acceptées ou rejetées par le médecin. Tu ne prends aucune décision.
-Règles :
-- 0 à 3 pistes diagnostiques, de la plus probable à la moins probable, chacune justifiée par des éléments présents dans la consultation (arguments_pour) et, s'il y en a, des éléments qui la rendent moins probable (arguments_contre).
-- "confiance" entre 0 et 1 : degré de concordance entre les éléments recueillis et la piste.
-- Si les informations sont insuffisantes, renvoie une liste vide de pistes.
-- "signes_alerte" : uniquement les signes de gravité réellement présents.
-- 2 à 4 actions de prise en charge pour la piste principale, prudentes, conformes aux protocoles ci-dessous quand ils s'appliquent.
+const SYSTEM = `Tu assistes un médecin au Sénégal (hôpital, centre de santé, clinique), pour tout type de consultation : médecine générale, pédiatrie, santé de la femme, maladies chroniques, urgences non vitales…
+Tu proposes des pistes diagnostiques et une prise en charge, qui seront TOUTES relues, acceptées ou rejetées par le médecin. Tu ne prends aucune décision.
 
-Protocoles de référence (base de connaissances v1) :
+Règles :
+- 0 à 3 pistes diagnostiques, de la plus probable à la moins probable, chacune justifiée par des éléments présents dans la consultation (arguments_pour) et, s'il y en a, des éléments qui la rendent moins probable (arguments_contre). Toute pathologie pertinente est possible, pas seulement celles des protocoles ci-dessous.
+- "code_cim10" : le code CIM-10 le plus précis possible, ou null si incertain.
+- "confiance" entre 0 et 1 : degré de concordance entre les éléments recueillis et la piste. Reste prudent quand les informations sont maigres.
+- Si les informations sont insuffisantes, renvoie une liste vide de pistes plutôt que de deviner.
+- "signes_alerte" : uniquement les signes de gravité ou les situations à risque réellement présents (dont une allergie connue incompatible, une grossesse, un jeune enfant, une constante critique).
+- 2 à 4 actions de prise en charge pour la piste principale : examens à demander, mesures, orientation, classes thérapeutiques. Conforme aux protocoles nationaux quand ils s'appliquent.
+
+Garde-fous :
+- Ne donne JAMAIS de posologie chiffrée (dose, fréquence, durée) : le médecin la fixe selon le patient.
+- Tiens compte de l'âge, du sexe, des antécédents, des traitements en cours et SURTOUT des allergies connues du patient : ne propose jamais un médicament auquel il est allergique.
+- En cas de signe de gravité, la première action est l'orientation ou la prise en charge urgente.
+- N'invente aucun élément clinique absent de la consultation.
+
+Protocoles de référence (base de connaissances v1, non exhaustive) :
 ${protocolDigest()}`;
 
-export async function suggestWithLlm(ex: Extraction, turnsFr: Turn[]): Promise<Suggestion[]> {
+function patientDigest(p?: PatientContext): string {
+  if (!p) return "Non renseigné.";
+  const parts = [
+    p.age !== null ? `${p.age} ans` : null,
+    p.sex === "F" ? "femme" : p.sex === "M" ? "homme" : null,
+    `allergies connues : ${p.allergies.join(", ") || "aucune déclarée"}`,
+    p.antecedents.length ? `antécédents au dossier : ${p.antecedents.join(", ")}` : null,
+    p.traitements.length ? `traitements en cours : ${p.traitements.join(", ")}` : null,
+  ];
+  return parts.filter(Boolean).join(" ; ");
+}
+
+export async function suggestWithLlm(ex: Extraction, turnsFr: Turn[], patient?: PatientContext): Promise<Suggestion[]> {
   const out = await structuredCall(
     SuggestionSchema,
     SYSTEM,
-    `Informations extraites :\n${JSON.stringify(ex, null, 2)}\n\nTranscription :\n<transcription>\n${turnsToText(turnsFr)}\n</transcription>`,
+    `Patient : ${patientDigest(patient)}\n\nInformations extraites :\n${JSON.stringify(ex, null, 2)}\n\nTranscription :\n<transcription>\n${turnsToText(turnsFr)}\n</transcription>`,
   );
   const base = { arguments_pour: [], arguments_contre: [], lie_a: null, decision: "pending" as const };
   const res: Suggestion[] = out.signes_alerte.map((label) => ({ ...base, id: sid(), type: "alerte", label, code: null, confiance: null }));
@@ -204,5 +273,6 @@ export async function suggestWithLlm(ex: Extraction, turnsFr: Turn[]): Promise<S
   for (const p of out.prise_en_charge.slice(0, 5)) {
     res.push({ ...base, id: sid(), type: "prise_en_charge", label: p.action, code: null, confiance: null, lie_a: p.diagnostic_lie || dx[0]?.nom || null });
   }
-  return res;
+  // Double contrôle des allergies, indépendant du modèle.
+  return withAllergyAlerts(res, patient);
 }

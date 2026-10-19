@@ -3,10 +3,9 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { z } from "zod";
 
 /**
- * Accès au LLM (Claude). Désactivé par défaut : le prototype fonctionne
- * entièrement hors-ligne avec le moteur de règles. Pour l'activer :
- *   KS_LLM_PROVIDER=claude
- *   ANTHROPIC_API_KEY=...
+ * Accès au LLM (Claude). Activé dès que ANTHROPIC_API_KEY est défini
+ * (ou KS_LLM_PROVIDER=claude) ; KS_LLM_PROVIDER=rules force le moteur de règles.
+ * Sans clé, le prototype fonctionne entièrement hors-ligne avec les règles.
  * Attention : la transcription (pseudonymisée) est alors envoyée à l'API.
  */
 export const LLM_MODEL = process.env.KS_LLM_MODEL || "claude-opus-5-5";
@@ -15,7 +14,9 @@ type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 const EFFORT = (process.env.KS_LLM_EFFORT as Effort) || "medium";
 
 export function llmEnabled(): boolean {
-  return process.env.KS_LLM_PROVIDER === "claude";
+  const provider = process.env.KS_LLM_PROVIDER;
+  if (provider === "rules") return false;
+  return provider === "claude" || !!process.env.ANTHROPIC_API_KEY;
 }
 
 let client: Anthropic | null = null;

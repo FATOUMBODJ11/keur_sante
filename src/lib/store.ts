@@ -3,7 +3,17 @@ import { randomBytes, scryptSync } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import postgres from "postgres";
-import type { AnnotatedCase, AuditEntry, Consultation, EvalRun, Lang, PatientRecord, User } from "@/lib/types";
+import type {
+  AnnotatedCase,
+  AuditEntry,
+  Consultation,
+  EvalRun,
+  Lang,
+  PasswordReset,
+  PatientRecord,
+  UsabilitySurvey,
+  User,
+} from "@/lib/types";
 
 /**
  * Stockage de Keur Santé, sous forme de documents JSON rangés par collection.
@@ -16,7 +26,7 @@ import type { AnnotatedCase, AuditEntry, Consultation, EvalRun, Lang, PatientRec
  * que par un code pseudonyme (KS-P-000001).
  */
 
-type Collection = "users" | "patients" | "consultations" | "cases" | "audit" | "evalRuns";
+type Collection = "users" | "patients" | "consultations" | "cases" | "audit" | "evalRuns" | "resets" | "surveys";
 
 interface Backend {
   get<T>(col: Collection, id: string): Promise<T | undefined>;
@@ -221,6 +231,9 @@ function ensureSeed() {
       full_name: "Dr Awa Ndiaye",
       role: "medecin",
       facility: "Centre de santé de Grand-Yoff (démo)",
+      structure_type: "centre_sante",
+      validator: true,
+      created_at: now(),
       passwordHash: hashPassword("keursante"),
     };
     await backend().put("users", demo.id, demo, demo.email);
@@ -241,17 +254,51 @@ export const db = {
     await ensureSeed();
     return backend().get<User>("users", id);
   },
-  async createUser(u: Omit<User, "id" | "role" | "passwordHash"> & { password: string }): Promise<User> {
+  async createUser(
+    u: Pick<User, "email" | "full_name" | "facility"> & Partial<Pick<User, "structure_type" | "specialty">> & { password: string },
+  ): Promise<User> {
     const user: User = {
       id: `u_${randomBytes(6).toString("hex")}`,
       email: u.email.trim().toLowerCase(),
       full_name: u.full_name.trim(),
       facility: u.facility.trim(),
+      structure_type: u.structure_type,
+      specialty: u.specialty?.trim() || undefined,
       role: "medecin",
+      validator: false,
+      created_at: now(),
       passwordHash: hashPassword(u.password),
     };
     await backend().put("users", user.id, user, user.email);
     return user;
+  },
+  async listUsers() {
+    await ensureSeed();
+    return (await backend().list<User>("users")).sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? ""));
+  },
+  async updateUser(id: string, patch: Partial<User>) {
+    const u = await backend().get<User>("users", id);
+    if (!u) return undefined;
+    const next: User = { ...u, ...patch, id: u.id, email: u.email };
+    await backend().put("users", id, next, next.email);
+    return next;
+  },
+
+  /* Réinitialisation du mot de passe (jeton haché, usage unique) */
+  async putReset(r: PasswordReset) {
+    await backend().put("resets", r.token_hash, r, r.user_id);
+  },
+  async getReset(tokenHash: string) {
+    return backend().get<PasswordReset>("resets", tokenHash);
+  },
+
+  /* Questionnaires d'usage (SUS) */
+  async insertSurvey(sv: UsabilitySurvey) {
+    await backend().put("surveys", sv.id, sv, sv.user_id);
+    return sv;
+  },
+  async listSurveys() {
+    return (await backend().list<UsabilitySurvey>("surveys")).sort((a, b) => b.created_at.localeCompare(a.created_at));
   },
 
   /* Patients pseudonymisés (propriétaire = praticien) */
@@ -270,6 +317,19 @@ export const db = {
   async findPatient(doctorId: string, code: string) {
     const p = await backend().get<PatientRecord>("patients", code.trim().toUpperCase());
     return p && p.doctor_id === doctorId ? p : undefined;
+  },
+  async listPatients(doctorId: string) {
+    return (await backend().list<PatientRecord>("patients", doctorId)).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  },
+  async updatePatient(code: string, patch: Partial<PatientRecord>) {
+    const p = await backend().get<PatientRecord>("patients", code);
+    if (!p) return undefined;
+    const next: PatientRecord = { ...p, ...patch, code: p.code, doctor_id: p.doctor_id, updated_at: now() };
+    await backend().put("patients", code, next, next.doctor_id);
+    return next;
+  },
+  async listAudit(limit = 300) {
+    return (await backend().list<AuditEntry>("audit")).sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
   },
 
   /* Consultations (propriétaire = praticien) */

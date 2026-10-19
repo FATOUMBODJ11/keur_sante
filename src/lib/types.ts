@@ -98,6 +98,21 @@ export interface Patient {
 export interface PatientRecord extends Patient {
   doctor_id: string;
   created_at: string;
+  /** Dossier : informations conservées d'une consultation à l'autre. */
+  allergies?: string[];
+  antecedents?: string[];
+  traitements?: string[];
+  notes?: string;
+  updated_at?: string;
+}
+
+/** Contexte du patient transmis à l'agent pour l'analyse. */
+export interface PatientContext {
+  age: number | null;
+  sex: "F" | "M" | null;
+  allergies: string[];
+  antecedents: string[];
+  traitements: string[];
 }
 
 export interface Consultation {
@@ -133,16 +148,45 @@ export interface Consultation {
   archived_at: string | null;
 }
 
+export type StructureType = "hopital" | "centre_sante" | "clinique" | "cabinet" | "poste_sante" | "autre";
+
 export interface User {
   id: string;
   email: string;
   full_name: string;
+  /** admin : administrateur de la plateforme (KS_ADMIN_EMAILS). */
   role: "medecin" | "admin";
+  /** Médecin validateur : établit les références du jeu de cas (§ 7). */
+  validator?: boolean;
   facility: string;
+  structure_type?: StructureType;
+  specialty?: string;
+  created_at?: string;
+  failed_logins?: number;
+  locked_until?: string | null;
   passwordHash: string;
 }
 
-export type PublicUser = Omit<User, "passwordHash">;
+export type PublicUser = Omit<User, "passwordHash" | "failed_logins" | "locked_until">;
+
+export interface PasswordReset {
+  token_hash: string;
+  user_id: string;
+  expires_at: string;
+  used: boolean;
+}
+
+/** Questionnaire SUS (System Usability Scale) : 10 réponses de 1 à 5. */
+export interface UsabilitySurvey {
+  id: string;
+  user_id: string;
+  user_name: string;
+  answers: number[];
+  score: number;
+  time_saved_minutes: number | null;
+  comment: string;
+  created_at: string;
+}
 
 export interface AuditEntry {
   at: string;
@@ -167,8 +211,12 @@ export interface AnnotatedCase {
   reference_diagnosis: string;
   differentials: string[];
   reference_plan: string[];
+  /** Famille de pathologies (infectieux, respiratoire…), pour les résultats par famille. */
+  family?: string;
   annotated_by: string;
   validated: boolean;
+  /** Seconde annotation par le même médecin, plus tard et sans voir la première (accord intra-annotateur). */
+  reannotation?: { reference_diagnosis: string; symptomes_presents: string[]; at: string } | null;
   created_at: string;
   created_by: string;
   /** Consultation dont provient la transcription, le cas échéant. */

@@ -3,7 +3,24 @@ import { AsrUnavailableError, runAgent, type AgentInput } from "@/lib/agent";
 import { decidedAssessmentAndPlan } from "@/lib/agent/soap";
 import { wolofEnabled } from "@/lib/features";
 import { db } from "@/lib/store";
-import type { Consultation, LangPref, Soap, SoapKey, User } from "@/lib/types";
+import type { Consultation, LangPref, PatientContext, PatientRecord, Soap, SoapKey, User } from "@/lib/types";
+
+/** Contexte du dossier patient transmis à l'agent. */
+export function patientContext(p: PatientRecord | undefined, fallback: Consultation["patient"]): PatientContext {
+  const birth = p?.birth_year ?? fallback.birth_year;
+  return {
+    age: birth ? new Date().getFullYear() - birth : null,
+    sex: p?.sex ?? fallback.sex,
+    allergies: p?.allergies ?? [],
+    antecedents: p?.antecedents ?? [],
+    traitements: p?.traitements ?? [],
+  };
+}
+
+const merge = (a: string[] = [], b: string[] = []) => {
+  const seen = new Set(a.map((x) => x.toLowerCase()));
+  return [...a, ...b.filter((x) => x && !seen.has(x.toLowerCase()))];
+};
 
 export class ValidationError extends Error {
   constructor(
@@ -91,7 +108,8 @@ export async function analyze(
   });
 
   try {
-    const out = await runAgent({ ...input, languagePref: c.language_requested });
+    const record = await db.findPatient(c.doctor_id, c.patient.code);
+    const out = await runAgent({ ...input, languagePref: c.language_requested, patient: patientContext(record, c.patient) });
     const updated = (await db.updateConsultation(c.id, {
       status: "review",
       language_detected: out.language,
@@ -153,5 +171,13 @@ export async function validate(c: Consultation, user: User): Promise<Consultatio
     validated_by: user.full_name,
   }))!;
   await db.audit({ user_id: user.id, action: "compte_rendu_valide", consultation_id: c.id, detail: "" });
+  // Le dossier patient s'enrichit des antécédents et traitements confirmés par cette consultation.
+  const record = await db.findPatient(c.doctor_id, c.patient.code);
+  if (record && c.extraction) {
+    await db.updatePatient(record.code, {
+      antecedents: merge(record.antecedents, c.extraction.antecedents),
+      traitements: merge(record.traitements, c.extraction.traitements.map((t) => t.replace(/s*(interrompu)$/, ""))),
+    });
+  }
   return updated;
 }

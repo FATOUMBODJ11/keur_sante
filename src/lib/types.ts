@@ -295,4 +295,11 @@ export interface Stats {
   total: number;
   par_statut: Partial<Record<ConsultationStatus, number>>;
   decisions_diagnostiques: { accepted: number; rejected: number; pending: number };
+  /** Diagnostics les plus souvent retenus par le praticien. */
+  top_diagnostics: { label: string; n: number }[];
+  /** Consultations par semaine (8 dernières semaines, de la plus ancienne à la plus récente). */
+  par_semaine: { semaine: string; n: number }[];
+  /** Délai médian entre l'ouverture et la validation du compte rendu (minutes). */
+  delai_validation_median: number | null;
+  patients: number;
 }

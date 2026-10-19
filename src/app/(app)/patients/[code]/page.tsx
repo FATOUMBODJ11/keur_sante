@@ -27,7 +27,7 @@ function Chips({ items, tone, empty }: { items?: string[]; tone?: string; empty:
       ))}
     </div>
   ) : (
-    <span className="faint">{empty}</span>
+    <div className="faint">{empty}</div>
   );
 }
 

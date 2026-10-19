@@ -29,6 +29,23 @@ Sans configuration, l'application fonctionne **hors-ligne** :
 
 > Testez le micro dans **Chrome ou Edge** à l'adresse http://localhost:3000. Le navigateur intégré d'un éditeur ne permet généralement pas la dictée.
 
+## Fonctionnalités
+
+| Module | Ce que fait l'application |
+|---|---|
+| **Accès** | Création de compte, connexion, mot de passe oublié (e-mail ou lien généré par l'administrateur), changement de mot de passe, verrouillage après 5 échecs, profil (structure, type, spécialité), administration (KS_ADMIN_EMAILS) |
+| **Patients** | Code pseudonyme, fiche patient : historique, allergies, antécédents, traitements, notes ; dossier pris en compte par l'analyse et enrichi à chaque validation |
+| **Consultation** | Double consentement, micro avec transcription en direct, détection automatique Médecin / Patient, pause et reprise, saisie rapide des constantes, saisie manuelle |
+| **Agent IA** | Extraction, pistes diagnostiques (CIM-10, score, arguments), signes d'alerte, alerte d'allergie, prise en charge, SOAP, trace ; Claude pour tout type de consultation, règles hors-ligne en secours |
+| **Relecture** | Retenir ou écarter chaque piste, modifier le SOAP, corriger la transcription et relancer l'analyse, valider, archiver |
+| **Documents** | Export texte, compte rendu imprimable et PDF (en-tête de la structure, signature) |
+| **Validation clinique** | Jeu de cas par famille, médecin validateur, réannotation à l'aveugle, accord intra-annotateur (kappa), métriques par composant et par famille, export CSV |
+| **Usage** | Questionnaire SUS (System Usability Scale), temps gagné déclaré |
+| **Pilotage** | Tableau de bord : activité sur 8 semaines, diagnostics les plus retenus, délai médian jusqu'à la validation |
+| **Conformité** | Page de confidentialité, journal d'audit, isolement des données entre praticiens |
+
+Le document d'accès pour le correcteur (URL, identifiants, scénario) est dans [`docs/ACCES_PROTOTYPE.md`](docs/ACCES_PROTOTYPE.md).
+
 ## Correspondance avec le cahier des charges
 
 | Cahier des charges | Où dans le code |
@@ -58,9 +75,10 @@ l'agent bascule sur le repli et le signale dans la trace, qui s'affiche sur la p
 Dans `.env.local` (modèle dans `.env.example`) :
 
 ```
-KS_LLM_PROVIDER=claude
 ANTHROPIC_API_KEY=...
 ```
+
+Claude est activé dès que la clé est présente. Pour forcer le moteur de règles, mettez `KS_LLM_PROVIDER=rules`. L'analyse tient compte du dossier du patient (âge, sexe, allergies, antécédents, traitements). Elle ne donne jamais de posologie chiffrée, et une alerte apparaît si une suggestion contredit une allergie connue.
 
 Le modèle par défaut est `claude-opus-5-5`. La sortie est structurée et validée par un schéma Zod. ⚠️ La
 transcription, pseudonymisée, est alors envoyée à l'API Anthropic. Vérifiez la conformité avec la CDP
@@ -132,8 +150,10 @@ Dans les deux cas :
 |---|---|
 | `DATABASE_URL` | la chaîne Transaction pooler de Supabase |
 | `KS_SESSION_SECRET` | une longue valeur aléatoire (32 caractères au moins) |
-| `KS_DEMO_ACCOUNT` | `off` si vous ne voulez pas du compte de démonstration en ligne |
-| `KS_LLM_PROVIDER`, `ANTHROPIC_API_KEY` | facultatif : analyse par Claude |
+| `KS_DEMO_ACCOUNT` | `off` si vous ne voulez pas du compte de démonstration en ligne (gardez-le pour le jury) |
+| `KS_ADMIN_EMAILS` | adresses des administrateurs (page Administration), séparées par des virgules |
+| `RESEND_API_KEY`, `KS_MAIL_FROM` | facultatif : envoi des e-mails de réinitialisation du mot de passe |
+| `ANTHROPIC_API_KEY` | analyse par Claude (recommandé) |
 
 3. Cliquez sur **Deploy**. Ensuite, chaque `git push` sur `main` redéploie automatiquement.
 

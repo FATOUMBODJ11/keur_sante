@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Bot, CircleCheck, ClipboardCheck, FileClock, Mic, Percent, Stethoscope } from "lucide-react";
+import { Activity, ArrowRight, BarChart3, Bot, CircleCheck, ClipboardCheck, FileClock, Mic, Percent, Stethoscope } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useState } from "react";
@@ -272,6 +272,68 @@ export default function Dashboard() {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid g-2">
+        <div className="card">
+          <div className="card-head">
+            <h2>
+              <BarChart3 size={16} />
+              Activité des 8 dernières semaines
+            </h2>
+            <span className="tiny faint">
+              {stats.patients} patient{stats.patients > 1 ? "s" : ""} suivi{stats.patients > 1 ? "s" : ""}
+            </span>
+          </div>
+          <div className="card-pad">
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 140 }}>
+              {(stats.par_semaine ?? []).map((w) => {
+                const max = Math.max(1, ...(stats.par_semaine ?? []).map((x) => x.n));
+                return (
+                  <div key={w.semaine} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, height: "100%" }}>
+                    <span className="tiny num">{w.n || ""}</span>
+                    <div style={{ flex: 1, width: "100%", display: "flex", alignItems: "flex-end" }}>
+                      <i
+                        style={{ display: "block", width: "100%", height: `${(w.n / max) * 100}%`, minHeight: w.n ? 4 : 2, borderRadius: 6, background: w.n ? "var(--primary)" : "var(--surface-3)" }}
+                        title={`Semaine du ${w.semaine} : ${w.n} consultation(s)`}
+                      />
+                    </div>
+                    <span className="tiny faint">{new Date(w.semaine).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+        <div className="card">
+          <div className="card-head">
+            <h2>
+              <Activity size={16} />
+              Indicateurs cliniques
+            </h2>
+          </div>
+          <div className="facts">
+            <div className="fact">
+              <span>Délai médian jusqu&apos;à la validation</span>
+              <div className="strong">{stats.delai_validation_median === null ? "—" : `${stats.delai_validation_median} min`}</div>
+            </div>
+            <div className="fact">
+              <span>Diagnostics les plus retenus</span>
+              <div>
+                {(stats.top_diagnostics ?? []).length === 0 ? (
+                  <span className="faint">Pas encore de diagnostic retenu</span>
+                ) : (
+                  stats.top_diagnostics.map((d) => (
+                    <div key={d.label} className="row small" style={{ gap: 8 }}>
+                      <span style={{ flex: 1 }}>{d.label}</span>
+                      <b className="num">{d.n}</b>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </div>

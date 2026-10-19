@@ -57,9 +57,22 @@ function Fact({ k, children }: { k: string; children: ReactNode }) {
   );
 }
 
-function Transcript({ c }: { c: Consultation }) {
+function Transcript({ c, onReanalyze }: { c: Consultation; onReanalyze: (text: string) => Promise<unknown> }) {
   const wolof = c.language_detected === "wo";
   const [view, setView] = useState<"src" | "fr">(wolof ? "src" : "fr");
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const startEdit = () => {
+    setDraft(c.transcript_source);
+    setEditing(true);
+  };
+  const rerun = async () => {
+    setBusy(true);
+    const r = await onReanalyze(draft);
+    setBusy(false);
+    if (r) setEditing(false);
+  };
   const entities = useMemo(() => entitiesFor(c.extraction), [c.extraction]);
   const turns = parseTurns(view === "src" ? c.transcript_source : c.transcript_fr);
   return (
@@ -69,17 +82,48 @@ function Transcript({ c }: { c: Consultation }) {
           <FileText size={16} />
           Transcription
         </h2>
-        {wolof && (
-          <div className="seg">
-            <button className={view === "src" ? "on" : ""} onClick={() => setView("src")}>
-              Wolof
+        <div className="row">
+          {wolof && !editing && (
+            <div className="seg">
+              <button className={view === "src" ? "on" : ""} onClick={() => setView("src")}>
+                Wolof
+              </button>
+              <button className={view === "fr" ? "on" : ""} onClick={() => setView("fr")}>
+                Traduction
+              </button>
+            </div>
+          )}
+          {c.status === "review" && !editing && (
+            <button className="btn btn-ghost btn-sm" onClick={startEdit} title="Corriger les mots ou les locuteurs, puis relancer l'analyse">
+              <Pencil size={13} />
+              Corriger
             </button>
-            <button className={view === "fr" ? "on" : ""} onClick={() => setView("fr")}>
-              Traduction
+          )}
+        </div>
+      </div>
+      {editing && (
+        <div className="card-pad stack">
+          <div className="info-box">
+            <Info size={15} />
+            <span>
+              Corrigez les mots mal reconnus et les locuteurs (« Médecin: », « Patient: » en début de ligne), puis relancez
+              l&apos;analyse. Les décisions sur les pistes et les modifications du SOAP seront remises à zéro.
+            </span>
+          </div>
+          <textarea className="textarea" style={{ minHeight: 280 }} value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Transcription corrigée" />
+          <div className="row" style={{ justifyContent: "flex-end" }}>
+            <button className="btn btn-quiet btn-sm" onClick={() => setEditing(false)} disabled={busy}>
+              Annuler
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={rerun} disabled={busy || draft.trim().length < 10}>
+              {busy ? <LoaderCircle size={13} className="spin" /> : <RotateCcw size={13} />}
+              Relancer l&apos;analyse
             </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+      {!editing && (
+      <>
       <div className="card-pad scroll-pane" style={{ paddingTop: 10 }}>
         {turns.map((t, i) => (
           <div key={i} className="turn">
@@ -112,6 +156,8 @@ function Transcript({ c }: { c: Consultation }) {
           <mark className="ent hist">antécédent</mark>
         </span>
       </div>
+      </>
+      )}
     </div>
   );
 }
@@ -365,7 +411,7 @@ export default function ReviewPage() {
 
       <div className="review">
         <div className="stack-lg">
-          <Transcript c={c} />
+          <Transcript c={c} onReanalyze={(text) => run("reanalyze", () => dt.reanalyze(c.id, text), "Analyse relancée")} />
           <div className="card">
             <div className="card-head">
               <h2>

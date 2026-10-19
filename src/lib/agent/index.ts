@@ -5,6 +5,7 @@ import { detectLanguage } from "./language";
 import { LLM_MODEL, llmEnabled, llmErrorMessage } from "./llm";
 import { buildSoap } from "./soap";
 import { suggestWithKnowledgeBase, suggestWithLlm } from "./suggest";
+import { inferSpeakers } from "./speakers";
 import { splitSentences, turnsToText } from "./transcript";
 import { translateWithGlossary, translateWithLlm } from "./translate";
 import { wolofEnabled } from "@/lib/features";
@@ -130,6 +131,9 @@ export async function runAgent(input: AgentInput): Promise<AgentOutput> {
         : { status: "skipped", provider: "transcription saisie", detail: "" },
     );
   }
+
+  // Tours sans locuteur (ASR, dictée, saisie libre) : attribution automatique Médecin / Patient.
+  transcript = inferSpeakers(transcript);
 
   /* 3. Traduction */
   let transcriptFr = transcript;

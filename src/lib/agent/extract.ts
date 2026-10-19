@@ -156,7 +156,8 @@ export function extractWithRules(turns: Turn[]): Extraction {
       const s = normalize(raw);
       // Comparaison sans accents : « fievre » tapé au clavier vaut « fièvre ».
       const sf = fold(raw);
-      const question = /\?\s*$/.test(raw) || (!isPatientSide && !isDoctor && QUESTION_START.test(sf) && hitsAreFew(sf));
+      // La dictée ne ponctue pas : une question se reconnaît aussi à sa tournure.
+      const question = /\?\s*$/.test(raw) || (!isPatientSide && QUESTION_START.test(sf) && hitsAreFew(sf));
       const duree = DURATION_RE.exec(s)?.[1] ?? null;
       const hits = findSymptoms(sf);
 

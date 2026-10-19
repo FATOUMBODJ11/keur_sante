@@ -61,6 +61,9 @@ export const dt = {
   createConsultation: (body: NewConsultation) => call<Consultation>("/api/consultations", { method: "POST", json: body }),
   submitTranscript: (id: string, text: string, source: "dictee" | "texte") =>
     call<Consultation>(`/api/consultations/${id}/transcript`, { method: "POST", json: { text, source } }),
+  /** Relance l'analyse d'un compte rendu non validé avec une transcription corrigée. */
+  reanalyze: (id: string, text: string) =>
+    call<Consultation>(`/api/consultations/${id}/transcript`, { method: "POST", json: { text, source: "texte", corrected: true } }),
   uploadAudio: (id: string, blob: Blob) => {
     const form = new FormData();
     form.append("audio", blob, "consultation.webm");

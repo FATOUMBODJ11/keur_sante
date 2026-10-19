@@ -21,6 +21,7 @@ import { AgentSteps } from "@/components/ui";
 import { Waves } from "@/components/Waves";
 import { dt } from "@/lib/client/api";
 import { dictationSupported, startDictation } from "@/lib/client/dictation";
+import { inferSpeaker } from "@/lib/agent/speakers";
 import { LANG } from "@/lib/client/format";
 import type { Consultation, LangPref, Providers, Speaker } from "@/lib/types";
 
@@ -281,7 +282,10 @@ interface Segment {
 }
 
 const LABEL: Record<string, string> = { medecin: "Médecin", patient: "Patient" };
-const nextWho = (w: Speaker): Speaker => (w === "medecin" ? "patient" : w === "patient" ? "" : "medecin");
+const nextWho = (w: Speaker): Speaker => (w === "medecin" ? "patient" : "medecin");
+
+/** « auto » : l'agent devine qui parle ; sinon le locuteur choisi est imposé. */
+type SpeakerMode = "auto" | "medecin" | "patient";
 
 function Capture({ consult, onDone }: { consult: Consultation; onDone: (j: Job) => void }) {
   const lang = consult.language_requested;
@@ -301,14 +305,14 @@ function Capture({ consult, onDone }: { consult: Consultation; onDone: (j: Job) 
   const [level, setLevel] = useState(0);
   const [segments, setSegments] = useState<Segment[]>([]);
   const [interim, setInterim] = useState("");
-  const [speaker, setSpeaker] = useState<Speaker>("medecin");
+  const [speaker, setSpeaker] = useState<SpeakerMode>("auto");
   const [phase, setPhase] = useState<"capture" | "review">("capture");
   const [draft, setDraft] = useState("");
   const [manual, setManual] = useState("");
   const [error, setError] = useState("");
   const timer = useTimer(live);
 
-  const speakerRef = useRef<Speaker>("medecin");
+  const speakerRef = useRef<SpeakerMode>("auto");
   const stopDictation = useRef<(() => void) | null>(null);
   const rec = useRef<{ stream: MediaStream; ctx: AudioContext; mr: MediaRecorder | null; chunks: Blob[]; stopRaf: () => void } | null>(null);
   const pane = useRef<HTMLDivElement>(null);
@@ -365,7 +369,10 @@ function Capture({ consult, onDone }: { consult: Consultation; onDone: (j: Job) 
       if (canDictate) {
         stopDictation.current = startDictation("fr-FR", {
           onFinal: (text) => {
-            setSegments((s) => [...s, { who: speakerRef.current, text }]);
+            setSegments((s) => [
+              ...s,
+              { who: speakerRef.current === "auto" ? inferSpeaker(text, s.at(-1)?.who) : speakerRef.current, text },
+            ]);
             setInterim("");
           },
           onInterim: setInterim,
@@ -407,7 +414,11 @@ function Capture({ consult, onDone }: { consult: Consultation; onDone: (j: Job) 
       onDone({ kind: "audio", blob });
       return;
     }
-    const all = [...segments, ...(interim ? [{ who: speakerRef.current, text: interim }] : [])];
+    const lastWho = segments.at(-1)?.who;
+    const all = [
+      ...segments,
+      ...(interim ? [{ who: speakerRef.current === "auto" ? inferSpeaker(interim, lastWho) : speakerRef.current, text: interim }] : []),
+    ];
     setInterim("");
     if (!all.length) {
       setError("Aucune parole n'a été reconnue. Vérifiez le micro et recommencez, ou utilisez la saisie.");
@@ -490,9 +501,9 @@ function Capture({ consult, onDone }: { consult: Consultation; onDone: (j: Job) 
             <div className="row" style={{ gap: 8 }}>
               <span className="tiny faint">Qui parle ?</span>
               <div className="seg" role="group" aria-label="Locuteur">
-                {(["medecin", "patient"] as Speaker[]).map((w) => (
-                  <button key={w} className={speaker === w ? "on" : ""} onClick={() => setSpeaker(w)}>
-                    {LABEL[w]}
+                {(["auto", "medecin", "patient"] as SpeakerMode[]).map((w) => (
+                  <button key={w} className={speaker === w ? "on" : ""} onClick={() => setSpeaker(w)} title={w === "auto" ? "Détection automatique de qui parle" : undefined}>
+                    {w === "auto" ? "Auto" : LABEL[w]}
                   </button>
                 ))}
               </div>
@@ -536,7 +547,7 @@ function Capture({ consult, onDone }: { consult: Consultation; onDone: (j: Job) 
                   <span>
                     Transcription en direct par la <b>dictée du navigateur</b> (français). L&apos;audio est traité par le service
                     de reconnaissance du navigateur ; pour de vraies données de patients, configurez le serveur Whisper local.
-                    Indiquez qui parle avec le sélecteur ci-dessus.
+                    Qui parle est détecté automatiquement : touchez « Médecin » ou « Patient » devant une phrase pour corriger.
                   </span>
                 </div>
               )}
@@ -564,7 +575,7 @@ function Capture({ consult, onDone }: { consult: Consultation; onDone: (j: Job) 
                 ))}
                 {interim && (
                   <div className="turn">
-                    <span className={`who ${speaker}`}>{LABEL[speaker]}</span>
+                    <span className={`who ${speaker === "auto" ? "" : speaker}`}>{speaker === "auto" ? "…" : LABEL[speaker]}</span>
                     <span>
                       {interim}
                       <span className="caret" />

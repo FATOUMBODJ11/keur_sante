@@ -77,11 +77,18 @@ export async function analyze(
   input: Omit<AgentInput, "languagePref">,
   source: NonNullable<Consultation["source"]>,
 ): Promise<Consultation> {
-  if (c.status !== "recording" && c.status !== "failed") {
-    throw new ValidationError("Cette consultation a déjà été analysée.", 409);
+  // Relance possible tant que le compte rendu n'est pas validé (transcription corrigée).
+  const rerun = c.status === "review";
+  if (c.status !== "recording" && c.status !== "failed" && !rerun) {
+    throw new ValidationError("Cette consultation a déjà été validée : l'analyse ne peut plus être relancée.", 409);
   }
-  await db.updateConsultation(c.id, { status: "processing", source, error: null });
-  await db.audit({ user_id: user.id, action: "analyse_lancee", consultation_id: c.id, detail: source });
+  await db.updateConsultation(c.id, { status: "processing", source: rerun ? (c.source ?? source) : source, error: null });
+  await db.audit({
+    user_id: user.id,
+    action: rerun ? "analyse_relancee" : "analyse_lancee",
+    consultation_id: c.id,
+    detail: rerun ? "transcription corrigée par le praticien" : source,
+  });
 
   try {
     const out = await runAgent({ ...input, languagePref: c.language_requested });
@@ -104,7 +111,8 @@ export async function analyze(
     const message = err instanceof Error ? err.message : String(err);
     // ASR indisponible : on revient à la capture pour permettre la dictée ou la saisie.
     const asr = err instanceof AsrUnavailableError;
-    await db.updateConsultation(c.id, { status: asr ? "recording" : "failed", error: message });
+    // En cas d'échec d'une relance, le compte rendu précédent reste disponible.
+    await db.updateConsultation(c.id, { status: rerun ? "review" : asr ? "recording" : "failed", error: message });
     await db.audit({ user_id: user.id, action: "analyse_echouee", consultation_id: c.id, detail: message });
     throw new ValidationError(message, asr ? 503 : 500);
   }

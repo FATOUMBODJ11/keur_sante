@@ -12,7 +12,7 @@ export async function POST(req: NextRequest, ctx: RouteContext<"/api/consultatio
   const { id } = await ctx.params;
   const g = await requireConsultation(id);
   if (!g.ok) return g.response;
-  const body = (await req.json().catch(() => ({}))) as { text?: string; source?: string };
+  const body = (await req.json().catch(() => ({}))) as { text?: string; source?: string; corrected?: boolean };
   const text = body.text?.trim() ?? "";
   if (text.length < 10) return error(400, "La transcription est vide ou trop courte.");
   if (text.length > 50_000) return error(413, "Transcription trop longue (50 000 caractères max).");
@@ -21,7 +21,14 @@ export async function POST(req: NextRequest, ctx: RouteContext<"/api/consultatio
     const c = await analyze(
       g.value.c,
       g.value.user,
-      { turns: parseTranscript(text), transcriptProvider: dictee ? "dictée du navigateur (Web Speech)" : undefined },
+      {
+        turns: parseTranscript(text),
+        transcriptProvider: body.corrected
+          ? "transcription corrigée par le praticien"
+          : dictee
+            ? "dictée du navigateur (Web Speech)"
+            : undefined,
+      },
       dictee ? "dictee" : "texte",
     );
     return json(c);

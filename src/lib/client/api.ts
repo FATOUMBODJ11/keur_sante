@@ -3,6 +3,9 @@
 import type {
   AnnotatedCase,
   AuditEntry,
+  ConsultationStatus,
+  Lang,
+  PatientRecord,
   StructureType,
   Consultation,
   Decision,
@@ -57,6 +60,17 @@ export interface RegisterBody {
 
 export type AdminUserRow = PublicUser & { consultations: number; locked: boolean };
 
+export type PatientRow = PatientRecord & { consultations: number; last_at: string | null; last_motif: string | null };
+
+export interface PatientConsultation {
+  id: string;
+  created_at: string;
+  status: ConsultationStatus;
+  motif: string | null;
+  language_detected: Lang | null;
+  diagnostic: string | null;
+}
+
 /** Client de l'API Keur Santé (équivalent du module `dt` de la maquette). */
 export const dt = {
   me: () => call<{ user: PublicUser }>("/api/auth/me").then((r) => r.user),
@@ -98,6 +112,12 @@ export const dt = {
   validate: (id: string) => call<Consultation>(`/api/consultations/${id}/validate`, { method: "POST" }),
   archive: (id: string) => call<Consultation>(`/api/consultations/${id}/archive`, { method: "POST" }),
   exportText: (id: string) => call<{ text: string }>(`/api/consultations/${id}/export`).then((r) => r.text),
+
+  listPatients: () => call<PatientRow[]>("/api/patients"),
+  getPatient: (code: string) =>
+    call<{ patient: PatientRecord; consultations: PatientConsultation[] }>(`/api/patients/${encodeURIComponent(code)}`),
+  updatePatient: (code: string, p: Partial<Pick<PatientRecord, "allergies" | "antecedents" | "traitements" | "notes">>) =>
+    call<PatientRecord>(`/api/patients/${encodeURIComponent(code)}`, { method: "PATCH", json: p }),
 
   listCases: () => call<AnnotatedCase[]>("/api/cases"),
   createCase: (c: CaseDraft) => call<AnnotatedCase>("/api/cases", { method: "POST", json: c }),

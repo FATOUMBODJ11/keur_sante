@@ -15,6 +15,7 @@ import {
   LoaderCircle,
   Lock,
   Pencil,
+  Printer,
   RotateCcw,
   Save,
   ShieldCheck,
@@ -367,9 +368,9 @@ export default function ReviewPage() {
       <div className="card review-head" style={{ marginBottom: 16 }}>
         <div className="kv">
           <span>Patient</span>
-          <b className="mono" style={{ fontSize: 13 }}>
+          <Link href={`/patients/${c.patient.code}`} className="mono strong" style={{ fontSize: 13 }} title="Ouvrir le dossier patient">
             {c.patient.code}
-          </b>
+          </Link>
         </div>
         <div className="kv">
           <span>Profil</span>
@@ -713,6 +714,10 @@ export default function ReviewPage() {
             <button className="btn btn-ghost" onClick={doExport}>
               <FileDown size={16} />
               Exporter
+            </button>
+            <button className="btn btn-ghost" onClick={() => router.push(`/consultations/${c.id}/imprimer`)}>
+              <Printer size={16} />
+              Imprimer / PDF
             </button>
             {c.status === "validated" && (
               <button className="btn btn-navy" onClick={() => setConfirmArchive(true)}>

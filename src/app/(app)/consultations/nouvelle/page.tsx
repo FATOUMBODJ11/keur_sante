@@ -9,12 +9,15 @@ import {
   Languages,
   LoaderCircle,
   Mic,
+  Pause,
+  Play,
   RotateCcw,
+  Thermometer,
   Square,
   TriangleAlert,
   UserRound,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRefreshCounts } from "@/components/providers";
 import { AgentSteps } from "@/components/ui";
@@ -85,8 +88,10 @@ export default function NewConsultation() {
 /* ------------------------------------------------------------------ */
 
 function PatientConsent({ onReady }: { onReady: (c: Consultation) => void }) {
-  const [kind, setKind] = useState<"new" | "existing">("new");
-  const [code, setCode] = useState("");
+  // Depuis un dossier patient : « Déjà suivi » est pré-rempli avec son code.
+  const fromPatient = useSearchParams().get("patient") ?? "";
+  const [kind, setKind] = useState<"new" | "existing">(fromPatient ? "existing" : "new");
+  const [code, setCode] = useState(fromPatient.toUpperCase());
   const [sex, setSex] = useState("");
   const [birthYear, setBirthYear] = useState("");
   const [language, setLanguage] = useState<LangPref>("auto");
@@ -287,6 +292,43 @@ const nextWho = (w: Speaker): Speaker => (w === "medecin" ? "patient" : "medecin
 /** « auto » : l'agent devine qui parle ; sinon le locuteur choisi est imposé. */
 type SpeakerMode = "auto" | "medecin" | "patient";
 
+interface Vitals {
+  temp: string;
+  tas: string;
+  tad: string;
+  fc: string;
+  fr: string;
+  spo2: string;
+  poids: string;
+  gly: string;
+}
+const EMPTY_VITALS: Vitals = { temp: "", tas: "", tad: "", fc: "", fr: "", spo2: "", poids: "", gly: "" };
+
+/** Phrase de constantes ajoutée à la transcription, au format reconnu par l'extraction. */
+function formatVitals(v: Vitals): string {
+  const parts = [
+    v.temp && `température ${v.temp.replace(".", ",")} degrés`,
+    v.tas && v.tad && `tension artérielle ${v.tas}/${v.tad}`,
+    v.fc && `pouls ${v.fc}`,
+    v.fr && `fréquence respiratoire ${v.fr}`,
+    v.spo2 && `saturation ${v.spo2} %`,
+    v.poids && `poids ${v.poids.replace(".", ",")} kg`,
+    v.gly && `glycémie ${v.gly.replace(".", ",")} g`,
+  ].filter(Boolean);
+  return parts.length ? `Constantes : ${parts.join(", ")}.` : "";
+}
+
+const VITAL_FIELDS: [keyof Vitals, string, string][] = [
+  ["temp", "Température (°C)", "38,5"],
+  ["tas", "TA systolique", "120"],
+  ["tad", "TA diastolique", "80"],
+  ["fc", "Pouls (bpm)", "88"],
+  ["fr", "Fréq. respiratoire", "18"],
+  ["spo2", "SpO2 (%)", "97"],
+  ["poids", "Poids (kg)", "70"],
+  ["gly", "Glycémie (g/L)", "1,10"],
+];
+
 function Capture({ consult, onDone }: { consult: Consultation; onDone: (j: Job) => void }) {
   const lang = consult.language_requested;
   const [providers, setProviders] = useState<Providers | null>(null);
@@ -310,7 +352,10 @@ function Capture({ consult, onDone }: { consult: Consultation; onDone: (j: Job) 
   const [draft, setDraft] = useState("");
   const [manual, setManual] = useState("");
   const [error, setError] = useState("");
-  const timer = useTimer(live);
+  const [paused, setPaused] = useState(false);
+  const [vitals, setVitals] = useState<Vitals>(EMPTY_VITALS);
+  const [showVitals, setShowVitals] = useState(false);
+  const timer = useTimer(live && !paused);
 
   const speakerRef = useRef<SpeakerMode>("auto");
   const stopDictation = useRef<(() => void) | null>(null);
@@ -366,19 +411,8 @@ function Capture({ consult, onDone }: { consult: Consultation; onDone: (j: Job) 
       rec.current = { stream, ctx, mr, chunks, stopRaf: () => cancelAnimationFrame(raf) };
 
       // Transcription en direct dans le navigateur (français).
-      if (canDictate) {
-        stopDictation.current = startDictation("fr-FR", {
-          onFinal: (text) => {
-            setSegments((s) => [
-              ...s,
-              { who: speakerRef.current === "auto" ? inferSpeaker(text, s.at(-1)?.who) : speakerRef.current, text },
-            ]);
-            setInterim("");
-          },
-          onInterim: setInterim,
-          onError: (m) => setError(m),
-        });
-      }
+      if (canDictate) beginDictation();
+      setPaused(false);
       setLive(true);
     } catch (e) {
       setError(
@@ -389,7 +423,38 @@ function Capture({ consult, onDone }: { consult: Consultation; onDone: (j: Job) 
     }
   }
 
+  function beginDictation() {
+    stopDictation.current = startDictation("fr-FR", {
+      onFinal: (text) => {
+        setSegments((s) => [
+          ...s,
+          { who: speakerRef.current === "auto" ? inferSpeaker(text, s.at(-1)?.who) : speakerRef.current, text },
+        ]);
+        setInterim("");
+      },
+      onInterim: setInterim,
+      onError: (m) => setError(m),
+    });
+  }
+
+  /** Pause : la dictée s'arrête et l'enregistrement est suspendu, sans perdre ce qui a été dit. */
+  function togglePause() {
+    const r = rec.current;
+    if (!paused) {
+      stopDictation.current?.();
+      stopDictation.current = null;
+      setInterim("");
+      if (r?.mr?.state === "recording") r.mr.pause();
+      setPaused(true);
+    } else {
+      if (r?.mr?.state === "paused") r.mr.resume();
+      if (canDictate) beginDictation();
+      setPaused(false);
+    }
+  }
+
   async function stop() {
+    setPaused(false);
     stopDictation.current?.();
     stopDictation.current = null;
     const r = rec.current;
@@ -437,8 +502,15 @@ function Capture({ consult, onDone }: { consult: Consultation; onDone: (j: Job) 
 
   const onRecButton = () => (live ? stop() : start());
   const canAnalyze = mode === "manual" ? manual.trim().length >= 10 : phase === "review" && draft.trim().length >= 10;
+  const vitalsLine = formatVitals(vitals);
+  const withVitals = (text: string) => (vitalsLine ? `${text.trim()}
+Médecin: ${vitalsLine}` : text);
   const analyze = () =>
-    onDone(mode === "manual" ? { kind: "transcript", text: manual, source: "texte" } : { kind: "transcript", text: draft, source: "dictee" });
+    onDone(
+      mode === "manual"
+        ? { kind: "transcript", text: withVitals(manual), source: "texte" }
+        : { kind: "transcript", text: withVitals(draft), source: "dictee" },
+    );
 
   return (
     <div className="capture">
@@ -452,7 +524,9 @@ function Capture({ consult, onDone }: { consult: Consultation; onDone: (j: Job) 
           <span className="pill mono" style={{ fontFamily: "var(--mono)" }}>
             {consult.patient.code}
           </span>
-          {live ? (
+          {live && paused ? (
+            <span className="pill">En pause</span>
+          ) : live ? (
             <span className="pill live">
               <i />
               En écoute
@@ -473,12 +547,24 @@ function Capture({ consult, onDone }: { consult: Consultation; onDone: (j: Job) 
           >
             {live ? <Square size={26} fill="currentColor" /> : <Mic size={30} />}
           </button>
+          {live && (
+            <button
+              className="btn btn-sm"
+              onClick={togglePause}
+              style={{ background: "rgba(255,255,255,.12)", color: "#fff", borderColor: "rgba(255,255,255,.25)" }}
+            >
+              {paused ? <Play size={14} /> : <Pause size={14} />}
+              {paused ? "Reprendre" : "Pause"}
+            </button>
+          )}
           <span className="small" style={{ color: "rgba(255,255,255,.75)", textAlign: "center" }}>
             {mode === "manual"
               ? "Saisie manuelle : le micro n'est pas utilisé"
               : !micAvailable
                 ? "Micro indisponible pour cette langue"
-                : live
+                : live && paused
+                  ? "Enregistrement en pause : reprenez quand vous voulez"
+                  : live
                   ? "Touchez pour arrêter la consultation"
                   : phase === "review"
                     ? "Vérifiez la transcription, puis lancez l'analyse"
@@ -612,7 +698,37 @@ function Capture({ consult, onDone }: { consult: Consultation; onDone: (j: Job) 
           </div>
         )}
 
-        <div className="card-head" style={{ borderTop: "1px solid var(--border)", borderBottom: 0, marginTop: "auto" }}>
+        {!serverAsr && (
+          <div className="card-pad" style={{ borderTop: "1px solid var(--border)", paddingTop: 12, paddingBottom: 12, marginTop: "auto" }}>
+            <button className="btn btn-quiet btn-sm" onClick={() => setShowVitals((v) => !v)} aria-expanded={showVitals}>
+              <Thermometer size={14} />
+              Constantes {vitalsLine ? "· saisies" : "(facultatif)"}
+            </button>
+            {showVitals && (
+              <div className="stack" style={{ marginTop: 10 }}>
+                <div className="grid g-4" style={{ gap: 8 }}>
+                  {VITAL_FIELDS.map(([k, label, ph]) => (
+                    <div key={k} className="field">
+                      <label className="label" htmlFor={`v-${k}`}>
+                        {label}
+                      </label>
+                      <input
+                        id={`v-${k}`}
+                        className="input"
+                        inputMode="decimal"
+                        placeholder={ph}
+                        value={vitals[k]}
+                        onChange={(e) => setVitals({ ...vitals, [k]: e.target.value.replace(/[^0-9.,]/g, "").slice(0, 6) })}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <p className="tiny faint">{vitalsLine ? `Ajouté à la transcription : « ${vitalsLine} »` : "Les constantes saisies sont ajoutées à la transcription avant l'analyse."}</p>
+              </div>
+            )}
+          </div>
+        )}
+        <div className="card-head" style={{ borderTop: "1px solid var(--border)", borderBottom: 0 }}>
           {error ? (
             <div className="error-box" style={{ flex: 1 }}>
               <TriangleAlert size={15} />

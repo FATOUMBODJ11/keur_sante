@@ -7,6 +7,7 @@ import type {
   Lang,
   PatientRecord,
   StructureType,
+  UsabilitySurvey,
   Consultation,
   Decision,
   EvalRun,
@@ -56,6 +57,13 @@ export interface RegisterBody {
   password: string;
   structure_type?: StructureType;
   specialty?: string;
+}
+
+export interface SurveyResults {
+  n: number;
+  sus_moyen: number | null;
+  temps_gagne_moyen: number | null;
+  surveys: UsabilitySurvey[];
 }
 
 export type AdminUserRow = PublicUser & { consultations: number; locked: boolean };
@@ -123,6 +131,10 @@ export const dt = {
   createCase: (c: CaseDraft) => call<AnnotatedCase>("/api/cases", { method: "POST", json: c }),
   updateCase: (id: string, c: CaseDraft) => call<AnnotatedCase>(`/api/cases/${id}`, { method: "PUT", json: c }),
   deleteCase: (id: string) => call(`/api/cases/${id}`, { method: "DELETE" }),
+
+  surveys: () => call<SurveyResults>("/api/surveys"),
+  submitSurvey: (body: { answers: number[]; time_saved_minutes: number | null; comment: string }) =>
+    call<UsabilitySurvey>("/api/surveys", { method: "POST", json: body }),
 
   listRuns: () => call<EvalRun[]>("/api/eval"),
   runEval: () => call<EvalRun>("/api/eval", { method: "POST" }),

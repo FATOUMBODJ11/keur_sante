@@ -107,6 +107,7 @@ export async function evaluateCase(c: AnnotatedCase): Promise<CaseResult> {
   return {
     case_id: c.case_id,
     langue: c.language,
+    family: c.family || "Autre",
     diagnostic_reference: c.reference_diagnosis,
     diagnostics_ia: dx.map((d) => d.label),
     langue_detectee: e2e.language,
@@ -130,7 +131,38 @@ const meanOrNull = (xs: (number | null)[]) => {
   return v.length ? mean(v) : null;
 };
 
+/** Accord intra-annotateur : concordance des diagnostics, kappa de Cohen et Jaccard des symptômes. */
+export function intraAgreement(cases: AnnotatedCase[]): EvalSummary["accord_intra"] {
+  const pairs = cases.filter((c) => c.reannotation);
+  if (!pairs.length) return { n: 0, diagnostic_concordance: null, kappa: null, symptomes_jaccard: null };
+  const a = pairs.map((c) => fold(c.reference_diagnosis).replace(/(.*?)/g, "").trim());
+  const b = pairs.map((c) => fold(c.reannotation!.reference_diagnosis).replace(/(.*?)/g, "").trim());
+  const po = a.filter((x, i) => sameDiagnosis(x, b[i])).length / pairs.length;
+  // Kappa : accord attendu par hasard d'après la fréquence de chaque diagnostic dans les deux annotations.
+  const cats = new Set([...a, ...b]);
+  let pe = 0;
+  for (const k of cats) pe += (a.filter((x) => x === k).length / pairs.length) * (b.filter((x) => x === k).length / pairs.length);
+  const kappa = pe < 1 ? (po - pe) / (1 - pe) : 1;
+  const jaccard = pairs.map((c) => {
+    const x = new Set(c.reference_entities.symptomes_presents.map(fold));
+    const y = new Set(c.reannotation!.symptomes_presents.map(fold));
+    const union = new Set([...x, ...y]);
+    return union.size ? [...x].filter((v) => y.has(v)).length / union.size : 1;
+  });
+  return { n: pairs.length, diagnostic_concordance: round(po), kappa: round(kappa), symptomes_jaccard: mean(jaccard) };
+}
+
 export function summarize(results: CaseResult[], cases: AnnotatedCase[]): EvalSummary {
+  const par_famille: EvalSummary["par_famille"] = {};
+  for (const fam of [...new Set(results.map((r) => r.family))]) {
+    const rs = results.filter((r) => r.family === fam);
+    par_famille[fam] = {
+      n: rs.length,
+      top1: mean(rs.map((r) => (r.diagnostic.top1 ? 1 : 0))),
+      top3: mean(rs.map((r) => (r.diagnostic.top3 ? 1 : 0))),
+      symptomes_f1: mean(rs.map((r) => r.extraction_symptomes.f1)),
+    };
+  }
   const par_langue: EvalSummary["par_langue"] = {};
   for (const l of ["fr", "wo"] as Lang[]) {
     const rs = results.filter((r) => r.langue === l);
@@ -155,6 +187,8 @@ export function summarize(results: CaseResult[], cases: AnnotatedCase[]): EvalSu
     traduction_f1: meanOrNull(results.map((r) => r.traduction_f1)),
     wer_moyen: meanOrNull(results.map((r) => r.wer)),
     par_langue,
+    par_famille,
+    accord_intra: intraAgreement(cases),
   };
 }
 

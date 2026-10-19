@@ -2,6 +2,10 @@ import "server-only";
 import type { AnnotatedCase } from "@/lib/types";
 import { ValidationError } from "@/lib/consultations";
 import { wolofEnabled } from "@/lib/features";
+import { CASE_FAMILIES } from "@/lib/families";
+
+export { CASE_FAMILIES };
+
 
 /** Champs saisis par l'utilisateur pour un cas annoté. */
 export type CaseInput = Partial<Omit<AnnotatedCase, "case_id" | "created_at" | "created_by">>;
@@ -35,8 +39,17 @@ export function parseCase(input: CaseInput): Omit<AnnotatedCase, "case_id" | "cr
     reference_diagnosis,
     differentials: list(input.differentials),
     reference_plan: list(input.reference_plan),
+    family: CASE_FAMILIES.includes(str(input.family, 80)) ? str(input.family, 80) : "Autre",
     annotated_by: str(input.annotated_by, 200),
     validated: input.validated === true,
+    reannotation:
+      input.reannotation && str(input.reannotation.reference_diagnosis, 200)
+        ? {
+            reference_diagnosis: str(input.reannotation.reference_diagnosis, 200),
+            symptomes_presents: list(input.reannotation.symptomes_presents),
+            at: input.reannotation.at || new Date().toISOString(),
+          }
+        : null,
     source_consultation: input.source_consultation ?? null,
   };
 }

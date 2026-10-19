@@ -1,9 +1,10 @@
 "use client";
 
-import { BadgeCheck, Database, FlaskConical, Info, LoaderCircle, Pencil, Play, Plus, Trash2, TriangleAlert } from "lucide-react";
+import { BadgeCheck, Database, FileDown, Repeat, FlaskConical, Info, LoaderCircle, Pencil, Play, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { useToast } from "@/components/providers";
+import { useAuth, useToast } from "@/components/providers";
+import { CASE_FAMILIES } from "@/lib/families";
 import { LangTag, Loading, Modal } from "@/components/ui";
 import { dt, type CaseDraft } from "@/lib/client/api";
 import { fmtDate, parseTurns, whoLabel } from "@/lib/client/format";
@@ -38,6 +39,9 @@ export default function EvaluationPage() {
   const [detail, setDetail] = useState<string | null>(null);
   const [langFilter, setLangFilter] = useState<"all" | Lang>("all");
   const [editor, setEditor] = useState<{ initial: CaseDraft; id?: string } | null>(null);
+  const [reannotate, setReannotate] = useState<AnnotatedCase | null>(null);
+  const { user } = useAuth();
+  const validator = !!user?.validator;
   const [wolof, setWolof] = useState(false);
   useEffect(() => {
     dt.providers()
@@ -145,6 +149,12 @@ export default function EvaluationPage() {
                 </option>
               ))}
             </select>
+          )}
+          {run && (
+            <a className="btn btn-ghost" href={`/api/eval/${run.id}/csv`} download>
+              <FileDown size={16} />
+              Exporter (CSV)
+            </a>
           )}
           <button className="btn btn-ghost" onClick={() => setEditor({ initial: emptyCase("fr") })}>
             <Plus size={16} />
@@ -330,6 +340,69 @@ export default function EvaluationPage() {
             </div>
             <div className="card">
               <div className="card-head">
+                <h2>Par famille de pathologies</h2>
+              </div>
+              <div className="card-pad stack">
+                {Object.entries(summary.par_famille || {}).map(([fam, v]) => (
+                  <div key={fam} className="stack" style={{ gap: 6 }}>
+                    <div className="row">
+                      <b>{fam}</b>
+                      <span className="faint small">{v.n} cas</span>
+                      <span className="spacer" />
+                      <span className={`score ${level(v.top1)}`}>{pct(v.top1)}</span>
+                    </div>
+                    <div className="bar">
+                      <i style={{ width: `${v.top1 * 100}%` }} />
+                    </div>
+                    <span className="tiny faint">
+                      Rang 1 · top 3 : {pct(v.top3)} · F1 symptômes : {pct(v.symptomes_f1)}
+                    </span>
+                  </div>
+                ))}
+                {Object.keys(summary.par_famille || {}).length === 0 && (
+                  <p className="small muted">Relancez une évaluation pour voir les résultats par famille.</p>
+                )}
+              </div>
+            </div>
+            <div className="card">
+              <div className="card-head">
+                <h2>Accord intra-annotateur</h2>
+                <span className="badge b-grey">{summary.accord_intra?.n ?? 0} cas réannotés</span>
+              </div>
+              <div className="card-pad small stack">
+                {summary.accord_intra && summary.accord_intra.n > 0 ? (
+                  <>
+                    <div className="row">
+                      <span className="muted">Concordance des diagnostics</span>
+                      <span className="spacer" />
+                      <span className={`score ${level(summary.accord_intra.diagnostic_concordance)}`}>
+                        {pct(summary.accord_intra.diagnostic_concordance)}
+                      </span>
+                    </div>
+                    <div className="row">
+                      <span className="muted">Kappa de Cohen</span>
+                      <span className="spacer" />
+                      <b className="num">{summary.accord_intra.kappa?.toFixed(2).replace(".", ",") ?? "n/d"}</b>
+                    </div>
+                    <div className="row">
+                      <span className="muted">Symptômes (Jaccard)</span>
+                      <span className="spacer" />
+                      <span className={`score ${level(summary.accord_intra.symptomes_jaccard)}`}>
+                        {pct(summary.accord_intra.symptomes_jaccard)}
+                      </span>
+                    </div>
+                    <p className="tiny faint">Kappa : moins de 0,4 faible · 0,4–0,6 modéré · 0,6–0,8 bon · plus de 0,8 excellent.</p>
+                  </>
+                ) : (
+                  <p className="muted">
+                    Faites réannoter une dizaine de cas par le même médecin, 2 à 3 semaines plus tard et sans revoir sa première
+                    annotation : bouton « Réannoter » dans le jeu de cas.
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="card">
+              <div className="card-head">
                 <h2>Reconnaissance vocale</h2>
                 <span className="badge b-grey">WER {summary.wer_moyen == null ? "n/d" : pct(summary.wer_moyen)}</span>
               </div>
@@ -376,6 +449,7 @@ export default function EvaluationPage() {
               <thead>
                 <tr>
                   <th>Cas</th>
+                  <th>Famille</th>
                   <th>Scénario</th>
                   <th>Diagnostic de référence</th>
                   <th>Référence</th>
@@ -393,10 +467,24 @@ export default function EvaluationPage() {
                         <LangTag code={c.language} />
                       </div>
                     </td>
+                    <td className="small">{c.family || "Autre"}</td>
                     <td className="small muted">{c.scenario || "—"}</td>
                     <td className="strong">{c.reference_diagnosis}</td>
-                    <td>{c.validated ? <span className="badge b-green">Validée</span> : <span className="badge b-amber">À valider</span>}</td>
+                    <td>
+                      {c.validated ? <span className="badge b-green">Validée</span> : <span className="badge b-amber">À valider</span>}
+                      {c.reannotation && <div className="tiny faint">réannoté</div>}
+                    </td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }} onClick={(e) => e.stopPropagation()}>
+                      {validator && (
+                        <button
+                          className="btn btn-quiet btn-sm"
+                          title="Seconde annotation à l'aveugle (accord intra-annotateur)"
+                          onClick={() => setReannotate(c)}
+                        >
+                          <Repeat size={14} />
+                          Réannoter
+                        </button>
+                      )}
                       <button className="btn btn-quiet btn-icon btn-sm" title="Modifier" aria-label="Modifier" onClick={() => setEditor({ initial: toDraft(c), id: c.case_id })}>
                         <Pencil size={14} />
                       </button>
@@ -423,7 +511,20 @@ export default function EvaluationPage() {
           }}
         />
       )}
-      {editor && <CaseEditor initial={editor.initial} id={editor.id} wolof={wolof} onClose={() => setEditor(null)} onSaved={saved} />}
+      {editor && (
+        <CaseEditor initial={editor.initial} id={editor.id} wolof={wolof} validator={validator} onClose={() => setEditor(null)} onSaved={saved} />
+      )}
+      {reannotate && (
+        <ReannotateModal
+          c={reannotate}
+          onClose={() => setReannotate(null)}
+          onSaved={(c) => {
+            setCases((list) => (list || []).map((x) => (x.case_id === c.case_id ? c : x)));
+            setReannotate(null);
+            toast(`Seconde annotation de ${c.case_id} enregistrée`);
+          }}
+        />
+      )}
     </>
   );
 }
@@ -589,12 +690,14 @@ function CaseEditor({
   initial,
   id,
   wolof,
+  validator,
   onClose,
   onSaved,
 }: {
   initial: CaseDraft;
   id?: string;
   wolof: boolean;
+  validator: boolean;
   onClose: () => void;
   onSaved: (c: AnnotatedCase, created: boolean) => void;
 }) {
@@ -667,6 +770,19 @@ function CaseEditor({
             </div>
           </div>
           <div className="field">
+            <label className="label" htmlFor="family">
+              Famille de pathologies
+            </label>
+            <select id="family" className="select" value={f.family ?? ""} onChange={(e) => set("family", e.target.value)}>
+              <option value="">Choisir…</option>
+              {CASE_FAMILIES.map((x) => (
+                <option key={x} value={x}>
+                  {x}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
             <label className="label" htmlFor="scenario">
               Scénario clinique
             </label>
@@ -752,13 +868,103 @@ function CaseEditor({
             </label>
             <input id="by" className="input" placeholder="ex. Dr …, médecin généraliste" value={f.annotated_by} onChange={(e) => set("annotated_by", e.target.value)} />
           </div>
-          <label className={`consent ${f.validated ? "on" : ""}`}>
-            <input type="checkbox" checked={f.validated} onChange={(e) => set("validated", e.target.checked)} />
+          <label className={`consent ${f.validated ? "on" : ""}`} title={validator ? undefined : "Réservé aux médecins validateurs"}>
+            <input type="checkbox" checked={f.validated} disabled={!validator} onChange={(e) => set("validated", e.target.checked)} />
             <div>
               <b>Référence validée par un professionnel de santé</b>
-              <span>Le diagnostic, les symptômes et le plan ont été établis ou relus par un soignant.</span>
+              <span>
+                {validator
+                  ? "Le diagnostic, les symptômes et le plan ont été établis ou relus par vous, médecin validateur."
+                  : "Seul un médecin validateur peut cocher cette case (rôle attribué par l'administrateur)."}
+              </span>
             </div>
           </label>
+        </div>
+        {error && (
+          <div className="error-box">
+            <TriangleAlert size={15} />
+            {error}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+/** Seconde annotation à l'aveugle : seule la transcription est montrée, pas la première annotation. */
+function ReannotateModal({ c, onClose, onSaved }: { c: AnnotatedCase; onClose: () => void; onSaved: (c: AnnotatedCase) => void }) {
+  const [dx, setDx] = useState("");
+  const [symptoms, setSymptoms] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const save = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      onSaved(
+        await dt.updateCase(c.case_id, {
+          ...toDraft(c),
+          reannotation: { reference_diagnosis: dx, symptomes_presents: fromCsv(symptoms), at: new Date().toISOString() },
+        }),
+      );
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      title={`Réannoter le cas ${c.case_id}`}
+      onClose={onClose}
+      wide
+      footer={
+        <>
+          <button className="btn btn-ghost" onClick={onClose}>
+            Annuler
+          </button>
+          <button className="btn btn-primary" onClick={save} disabled={busy || !dx.trim()}>
+            {busy ? <LoaderCircle size={15} className="spin" /> : <Repeat size={15} />}
+            Enregistrer la seconde annotation
+          </button>
+        </>
+      }
+    >
+      <div className="stack-lg case-form">
+        <div className="info-box">
+          <Info size={15} />
+          <span>
+            Annotez ce cas comme si vous le découvriez : votre première annotation est masquée. La comparaison des deux mesure la
+            cohérence de la référence (accord intra-annotateur).
+          </span>
+        </div>
+        <div className="doc" style={{ fontFamily: "var(--font)", fontSize: 13 }}>
+          {parseTurns(c.reference_transcript).map((t, i) => (
+            <div key={i} className="turn" style={{ padding: "3px 0" }}>
+              <span className={`who ${t.who}`}>{whoLabel(t.who)}</span>
+              <span>{t.text}</span>
+            </div>
+          ))}
+        </div>
+        <div className="grid g-2">
+          <div className="field">
+            <label className="label" htmlFor="re-dx">
+              Diagnostic
+            </label>
+            <input id="re-dx" className="input" list="kb-dx-re" value={dx} onChange={(e) => setDx(e.target.value)} />
+            <datalist id="kb-dx-re">
+              {KNOWLEDGE_BASE.map((k) => (
+                <option key={k.name} value={k.name} />
+              ))}
+            </datalist>
+          </div>
+          <div className="field">
+            <label className="label" htmlFor="re-sym">
+              Symptômes présents
+            </label>
+            <input id="re-sym" className="input" placeholder="séparés par des virgules" value={symptoms} onChange={(e) => setSymptoms(e.target.value)} />
+          </div>
         </div>
         {error && (
           <div className="error-box">

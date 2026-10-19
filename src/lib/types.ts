@@ -234,6 +234,7 @@ export interface PRF {
 export interface CaseResult {
   case_id: string;
   langue: Lang;
+  family: string;
   diagnostic_reference: string;
   diagnostics_ia: string[];
   langue_detectee: Lang;
@@ -263,6 +264,9 @@ export interface EvalSummary {
   traduction_f1: number | null;
   wer_moyen: number | null;
   par_langue: Partial<Record<Lang, { n: number; top1: number; top1_bout_en_bout: number }>>;
+  par_famille: Record<string, { n: number; top1: number; top3: number; symptomes_f1: number }>;
+  /** Accord intra-annotateur sur les cas réannotés (même médecin, plus tard). */
+  accord_intra: { n: number; diagnostic_concordance: number | null; kappa: number | null; symptomes_jaccard: number | null };
 }
 
 export interface EvalRun {

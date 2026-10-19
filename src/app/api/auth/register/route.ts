@@ -1,6 +1,8 @@
 import { error, json } from "@/lib/api";
 import { sessionSecretProblem, setSession, toPublic } from "@/lib/auth";
 import { db, describeDbError } from "@/lib/store";
+import { STRUCTURE_TYPES } from "@/lib/accounts";
+import type { StructureType } from "@/lib/types";
 
 /** Création d'un compte praticien. Chaque praticien ne voit que ses propres consultations. */
 export async function POST(req: Request) {
@@ -9,6 +11,8 @@ export async function POST(req: Request) {
     facility?: string;
     email?: string;
     password?: string;
+    structure_type?: string;
+    specialty?: string;
   };
   const full_name = body.full_name?.trim() ?? "";
   const facility = body.facility?.trim() ?? "";
@@ -26,7 +30,8 @@ export async function POST(req: Request) {
 
   try {
     if (await db.findUserByEmail(email)) return error(409, "Un compte existe déjà avec cette adresse e-mail.");
-    const user = await db.createUser({ full_name, facility, email, password });
+    const structure_type = STRUCTURE_TYPES.includes(body.structure_type as StructureType) ? (body.structure_type as StructureType) : undefined;
+    const user = await db.createUser({ full_name, facility, email, password, structure_type, specialty: body.specialty?.slice(0, 80) });
     await setSession(user.id);
     await db.audit({ user_id: user.id, action: "compte_cree", consultation_id: null, detail: "" });
     return json({ user: toPublic(user) }, 201);

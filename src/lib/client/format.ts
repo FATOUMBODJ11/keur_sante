@@ -1,5 +1,14 @@
 import { SYMPTOMS } from "@/lib/data/lexicon";
-import type { ConsultationStatus, Extraction, Patient, Speaker, StepName } from "@/lib/types";
+import type { ConsultationStatus, Extraction, Patient, Speaker, StepName, StructureType } from "@/lib/types";
+
+export const STRUCTURE_LABELS: Record<StructureType, string> = {
+  hopital: "Hôpital",
+  centre_sante: "Centre de santé",
+  clinique: "Clinique privée",
+  cabinet: "Cabinet médical",
+  poste_sante: "Poste de santé",
+  autre: "Autre",
+};
 
 export const STATUS: Record<ConsultationStatus, { label: string; cls: string }> = {
   recording: { label: "Capture", cls: "b-red" },

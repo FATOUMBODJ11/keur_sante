@@ -3,7 +3,7 @@
 import { CircleCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { dt } from "@/lib/client/api";
+import { dt, type RegisterBody } from "@/lib/client/api";
 import type { PublicUser } from "@/lib/types";
 import { Loading } from "./ui";
 
@@ -36,7 +36,9 @@ function ToastProvider({ children }: { children: ReactNode }) {
 interface AuthValue {
   user: PublicUser | null;
   login: (email: string, password: string) => Promise<PublicUser>;
-  register: (body: { full_name: string; facility: string; email: string; password: string }) => Promise<PublicUser>;
+  register: (body: RegisterBody) => Promise<PublicUser>;
+  /** Met à jour l'utilisateur affiché (après modification du profil). */
+  setUser: (u: PublicUser) => void;
   logout: () => void;
 }
 
@@ -44,6 +46,7 @@ const AuthCtx = createContext<AuthValue>({
   user: null,
   login: async () => Promise.reject(),
   register: async () => Promise.reject(),
+  setUser: () => {},
   logout: () => {},
 });
 export const useAuth = () => useContext(AuthCtx);
@@ -80,7 +83,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return ready ? (
-    <AuthCtx.Provider value={{ user, login, register, logout }}>{children}</AuthCtx.Provider>
+    <AuthCtx.Provider value={{ user, login, register, setUser, logout }}>{children}</AuthCtx.Provider>
   ) : (
     <Loading label="Ouverture de la session…" />
   );

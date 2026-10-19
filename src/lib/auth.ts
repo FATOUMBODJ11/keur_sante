@@ -1,5 +1,5 @@
 import "server-only";
-import { createHmac, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { db } from "@/lib/store";
 import type { PublicUser, User } from "@/lib/types";
@@ -54,10 +54,36 @@ export function verifyPassword(user: User, password: string): boolean {
   return timingSafeEqual(candidate, Buffer.from(hash, "hex"));
 }
 
+/** Administrateurs de la plateforme : adresses listées dans KS_ADMIN_EMAILS (séparées par des virgules). */
+export function isAdmin(user: User): boolean {
+  const admins = (process.env.KS_ADMIN_EMAILS ?? "")
+    .split(",")
+    .map((x) => x.trim().toLowerCase())
+    .filter(Boolean);
+  return user.role === "admin" || admins.includes(user.email.toLowerCase());
+}
+
 export function toPublic(user: User): PublicUser {
-  const { passwordHash: _omit, ...rest } = user;
-  void _omit;
-  return rest;
+  const { passwordHash: _p, failed_logins: _f, locked_until: _l, ...rest } = user;
+  void _p;
+  void _f;
+  void _l;
+  return { ...rest, role: isAdmin(user) ? "admin" : "medecin" };
+}
+
+/* ---------- Verrouillage après échecs de connexion ---------- */
+
+export const MAX_FAILED_LOGINS = 5;
+export const LOCK_MINUTES = 15;
+
+/* ---------- Réinitialisation du mot de passe ---------- */
+
+export const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
+
+/** Crée un jeton de réinitialisation (valable 1 h) ; seul son condensé est stocké. */
+export function newResetToken() {
+  const token = randomBytes(32).toString("hex");
+  return { token, token_hash: hashToken(token), expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() };
 }
 
 export async function setSession(userId: string) {

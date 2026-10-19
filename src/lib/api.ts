@@ -1,6 +1,6 @@
 import "server-only";
 import { NextResponse } from "next/server";
-import { currentUser } from "@/lib/auth";
+import { currentUser, isAdmin } from "@/lib/auth";
 import { db, describeDbError } from "@/lib/store";
 import type { Consultation, User } from "@/lib/types";
 
@@ -28,6 +28,14 @@ export async function requireUser(): Promise<Guarded<User>> {
   const user = await currentUser();
   if (!user) return { ok: false, response: error(401, "Session expirée. Reconnectez-vous.") };
   return { ok: true, value: user };
+}
+
+/** Administrateur de la plateforme (KS_ADMIN_EMAILS). */
+export async function requireAdmin(): Promise<Guarded<User>> {
+  const u = await requireUser();
+  if (!u.ok) return u;
+  if (!isAdmin(u.value)) return { ok: false, response: error(403, "Réservé aux administrateurs.") };
+  return u;
 }
 
 /** Consultation appartenant au médecin connecté. */

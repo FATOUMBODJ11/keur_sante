@@ -2,7 +2,10 @@
 
 import { ArrowRight, Lock, LoaderCircle, ShieldCheck, Stethoscope, UserCheck, UserPlus } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useAuth, useAuthRedirect } from "@/components/providers";
+import { STRUCTURE_LABELS } from "@/lib/client/format";
+import type { StructureType } from "@/lib/types";
 import { BrandMark, ThemeSeg } from "@/components/ui";
 import { Waves } from "@/components/Waves";
 
@@ -15,6 +18,8 @@ export default function Landing() {
   const [password, setPassword] = useState("keursante");
   const [fullName, setFullName] = useState("");
   const [facility, setFacility] = useState("");
+  const [structureType, setStructureType] = useState<StructureType | "">("");
+  const [specialty, setSpecialty] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   // Wolof en pause par défaut : le texte de l'accueil suit l'interrupteur KS_WOLOF.
@@ -41,7 +46,15 @@ export default function Landing() {
     setError("");
     try {
       if (mode === "login") await login(email, password);
-      else await register({ full_name: fullName, facility, email, password });
+      else
+        await register({
+          full_name: fullName,
+          facility,
+          email,
+          password,
+          specialty: specialty || undefined,
+          ...(structureType ? { structure_type: structureType } : {}),
+        });
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -148,6 +161,27 @@ export default function Landing() {
                   required
                 />
               </div>
+              <div className="grid g-2" style={{ gap: 12 }}>
+                <div className="field">
+                  <label className="label" htmlFor="stype">
+                    Type de structure
+                  </label>
+                  <select id="stype" className="select" value={structureType} onChange={(e) => setStructureType(e.target.value as StructureType)}>
+                    <option value="">Non précisé</option>
+                    {Object.entries(STRUCTURE_LABELS).map(([k, label]) => (
+                      <option key={k} value={k}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label className="label" htmlFor="spec">
+                    Spécialité
+                  </label>
+                  <input id="spec" className="input" placeholder="ex. Médecine générale" value={specialty} onChange={(e) => setSpecialty(e.target.value)} />
+                </div>
+              </div>
             </>
           )}
           <div className="field">
@@ -171,7 +205,13 @@ export default function Landing() {
               required
             />
           </div>
-          {mode === "register" && <p className="tiny faint">8 caractères au moins.</p>}
+          {mode === "register" ? (
+            <p className="tiny faint">8 caractères au moins.</p>
+          ) : (
+            <Link href="/mot-de-passe-oublie" className="small strong" style={{ alignSelf: "flex-end" }}>
+              Mot de passe oublié ?
+            </Link>
+          )}
           {error && <div className="error-box">{error}</div>}
           <button className="btn btn-primary btn-lg btn-block" disabled={busy}>
             {busy ? <LoaderCircle size={18} className="spin" /> : mode === "login" ? <ArrowRight size={18} /> : <UserPlus size={18} />}

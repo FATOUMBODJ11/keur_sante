@@ -2,6 +2,8 @@
 
 import type {
   AnnotatedCase,
+  AuditEntry,
+  StructureType,
   Consultation,
   Decision,
   EvalRun,
@@ -44,13 +46,34 @@ export interface NewConsultation {
 
 export type CaseDraft = Omit<AnnotatedCase, "case_id" | "created_at" | "created_by">;
 
+export interface RegisterBody {
+  full_name: string;
+  facility: string;
+  email: string;
+  password: string;
+  structure_type?: StructureType;
+  specialty?: string;
+}
+
+export type AdminUserRow = PublicUser & { consultations: number; locked: boolean };
+
 /** Client de l'API Keur Santé (équivalent du module `dt` de la maquette). */
 export const dt = {
   me: () => call<{ user: PublicUser }>("/api/auth/me").then((r) => r.user),
   login: (email: string, password: string) =>
     call<{ user: PublicUser }>("/api/auth/login", { method: "POST", json: { email, password } }),
-  register: (body: { full_name: string; facility: string; email: string; password: string }) =>
-    call<{ user: PublicUser }>("/api/auth/register", { method: "POST", json: body }),
+  register: (body: RegisterBody) => call<{ user: PublicUser }>("/api/auth/register", { method: "POST", json: body }),
+  forgot: (email: string) => call<{ mail: boolean; message: string }>("/api/auth/forgot", { method: "POST", json: { email } }),
+  resetPassword: (token: string, password: string) => call("/api/auth/reset", { method: "POST", json: { token, password } }),
+  updateProfile: (p: Partial<Pick<PublicUser, "full_name" | "facility" | "structure_type" | "specialty">>) =>
+    call<{ user: PublicUser }>("/api/profile", { method: "PATCH", json: p }).then((r) => r.user),
+  changePassword: (current: string, next: string) => call("/api/profile/password", { method: "POST", json: { current, next } }),
+
+  adminUsers: () => call<AdminUserRow[]>("/api/admin/users"),
+  adminUpdateUser: (id: string, patch: { validator?: boolean; unlock?: boolean }) =>
+    call<PublicUser>(`/api/admin/users/${id}`, { method: "PATCH", json: patch }),
+  adminResetLink: (id: string) => call<{ link: string }>(`/api/admin/users/${id}`, { method: "POST" }).then((r) => r.link),
+  adminAudit: () => call<(AuditEntry & { user_name: string })[]>("/api/admin/audit"),
   logout: () => call("/api/auth/logout", { method: "POST" }).catch(() => {}),
 
   stats: () => call<Stats>("/api/stats"),

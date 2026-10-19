@@ -1,6 +1,6 @@
 "use client";
 
-import { ClipboardList, FlaskConical, LayoutDashboard, LogOut, Mic, Sparkles } from "lucide-react";
+import { ClipboardList, FlaskConical, LayoutDashboard, LogOut, MessageSquareHeart, Mic, ShieldCheck, Sparkles, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
@@ -77,13 +77,27 @@ export function Shell({ children }: { children: ReactNode }) {
               </span>
             )}
           </NavLink>
+          <NavLink href="/patients">
+            <Users size={17} />
+            <span className="lbl">Patients</span>
+          </NavLink>
           <div className="nav-section">Qualité</div>
           <NavLink href="/evaluation">
             <FlaskConical size={17} />
             <span className="lbl">Validation clinique</span>
           </NavLink>
+          <NavLink href="/questionnaire">
+            <MessageSquareHeart size={17} />
+            <span className="lbl">Questionnaire d&apos;usage</span>
+          </NavLink>
+          {user.role === "admin" && (
+            <NavLink href="/admin">
+              <ShieldCheck size={17} />
+              <span className="lbl">Administration</span>
+            </NavLink>
+          )}
           <div className="sidebar-foot">
-            <div className="user-chip">
+            <Link href="/profil" className="user-chip" title="Mon profil" style={{ textDecoration: "none" }}>
               <span className="avatar">{initials}</span>
               <div style={{ minWidth: 0 }}>
                 <div className="strong" style={{ color: "var(--text)" }}>
@@ -91,7 +105,7 @@ export function Shell({ children }: { children: ReactNode }) {
                 </div>
                 <div className="tiny faint">{user.facility}</div>
               </div>
-            </div>
+            </Link>
             <ThemeSeg compact />
             <button className="btn btn-quiet btn-sm" onClick={logout} style={{ justifyContent: "flex-start" }}>
               <LogOut size={14} />
@@ -111,6 +125,10 @@ export function Shell({ children }: { children: ReactNode }) {
             </div>
           )}
           {children}
+          <footer className="tiny faint" style={{ textAlign: "center", padding: "24px 0 8px" }}>
+            Keur Santé · Prototype — Mastère Stratégie Digitale, ISM Digital Campus ·{" "}
+            <Link href="/confidentialite">Confidentialité</Link>
+          </footer>
         </main>
       </div>
     </RefreshProvider>

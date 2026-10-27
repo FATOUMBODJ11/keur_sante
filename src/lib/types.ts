@@ -287,7 +287,10 @@ export interface Providers {
   llm_model: string | null;
   asr_fr_ready: boolean;
   asr_wo_ready: boolean;
-  /** Wolof activé (KS_WOLOF=on) ; sinon l'application est en français seul. */
+  /** Le micro passe par ElevenLabs Scribe (envoi direct depuis le navigateur, voix séparées). */
+  scribe_fr: boolean;
+  scribe_wo: boolean;
+  /** Wolof activé (ELEVENLABS_API_KEY ou KS_WOLOF=on) ; sinon l'application est en français seul. */
   wolof_enabled: boolean;
 }
 

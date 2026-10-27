@@ -31,7 +31,9 @@ Sur la page d'accueil, l'adresse et le mot de passe de démonstration sont déj�
 > « Docteur, j'ai mal à la gorge depuis deux jours et j'ai de la fièvre. »
 > « Vous toussez ? » — « Non. »
 
-La transcription s'affiche en direct et chaque phrase est attribuée automatiquement au **Médecin** ou au **Patient**. Vous pouvez mettre en **pause**, ouvrir **Constantes** pour saisir par exemple une température de 38,6, puis arrêter l'enregistrement, relire le texte et cliquer sur **Analyser la consultation**.
+À l'arrêt de l'enregistrement, l'audio est transcrit par **ElevenLabs Scribe** et les voix sont séparées automatiquement (**Médecin** / **Patient**). Vous pouvez mettre en **pause** pendant l'enregistrement, ouvrir **Constantes** pour saisir par exemple une température de 38,6, relire le texte (bouton **Inverser Médecin / Patient** si besoin), puis cliquer sur **Analyser la consultation**.
+
+Pour une consultation **en wolof**, choisissez « Wolof » ou « Détection auto » à l'étape 1 : la transcription wolof est traduite en français avant l'analyse.
 
 **Option B — saisie.** Cliquez sur **Saisie**, collez le texte suivant, puis cliquez sur **Analyser la consultation** :
 
@@ -71,4 +73,4 @@ Ouvrez **Questionnaire d'usage** et répondez aux 10 affirmations du **SUS** (Sy
 ## Remarques
 
 - **Analyse** : sans clé d'API Claude, l'analyse repose sur un moteur de règles hors-ligne (bandeau « Mode hors-ligne »). Avec la clé, Claude analyse tout type de consultation.
-- **Wolof** : prévu (traduction et reconnaissance vocale du wolof), mais en pause dans cette version. Il sera activé une fois le moteur de reconnaissance vocale choisi.
+- **Wolof** : reconnaissance vocale par ElevenLabs Scribe, puis traduction en français par Claude. La reconnaissance du wolof reste moins précise que celle du français : relisez la transcription avant l'analyse.

@@ -22,7 +22,7 @@ export default function Landing() {
   const [specialty, setSpecialty] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  // Wolof en pause par défaut : le texte de l'accueil suit l'interrupteur KS_WOLOF.
+  // Le texte de l'accueil suit l'activation du wolof (clé ElevenLabs ou KS_WOLOF).
   const [wolof, setWolof] = useState(false);
   useEffect(() => {
     fetch("/api/features")
@@ -99,7 +99,7 @@ export default function Landing() {
           {wolof ? (
             <div>
               <b>FR + WO</b>
-              <span>Wolof transcrit avec Kiriku-Wolof-ASR puis traduit</span>
+              <span>Wolof transcrit par ElevenLabs Scribe puis traduit</span>
             </div>
           ) : (
             <div>

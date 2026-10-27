@@ -104,8 +104,13 @@ export const dt = {
   listConsultations: () => call<Consultation[]>("/api/consultations"),
   getConsultation: (id: string) => call<Consultation>(`/api/consultations/${id}`),
   createConsultation: (body: NewConsultation) => call<Consultation>("/api/consultations", { method: "POST", json: body }),
-  submitTranscript: (id: string, text: string, source: "dictee" | "texte") =>
-    call<Consultation>(`/api/consultations/${id}/transcript`, { method: "POST", json: { text, source } }),
+  submitTranscript: (id: string, text: string, source: "dictee" | "texte" | "audio", language?: { language: Lang; language_confidence: number }) =>
+    call<Consultation>(`/api/consultations/${id}/transcript`, { method: "POST", json: { text, source, ...language } }),
+  /** Jeton ElevenLabs à usage unique : le navigateur envoie l'audio directement à Scribe. */
+  scribeToken: (id: string) =>
+    call<{ token: string; url: string; model_id: string; language_code: string | null }>(`/api/consultations/${id}/scribe-token`, {
+      method: "POST",
+    }),
   /** Relance l'analyse d'un compte rendu non validé avec une transcription corrigée. */
   reanalyze: (id: string, text: string) =>
     call<Consultation>(`/api/consultations/${id}/transcript`, { method: "POST", json: { text, source: "texte", corrected: true } }),

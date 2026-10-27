@@ -19,11 +19,11 @@ Ouvrez http://localhost:3000. Vous pouvez **créer votre compte praticien** depu
 L'interface reprend la maquette `Keur Santé.html` : même feuille de style, logo, fond animé (three.js) et écrans.
 L'application démarre **vide**. Elle ne contient ni consultation ni cas inventés : vous la testez avec vos propres consultations.
 
-> **Wolof en pause.** Pour l'instant, l'application fonctionne en **français seul** : le choix de langue, Kiriku-Wolof-ASR, la traduction et les cas en wolof sont masqués. Tout le code reste en place. Pour réactiver le wolof, ajoutez `KS_WOLOF=on` dans `.env.local`.
+> **Wolof.** Le wolof s'active dès que la reconnaissance vocale **ElevenLabs Scribe** est configurée (`ELEVENLABS_API_KEY`, voir plus bas). Sans cette clé, l'application fonctionne en **français seul**. `KS_WOLOF=off` remet le wolof en pause, `KS_WOLOF=on` l'active sans Scribe (saisie seulement).
 
 Sans configuration, l'application fonctionne **hors-ligne** :
 - **Micro, français** : transcription en direct par la dictée du navigateur (Web Speech API, dans Chrome ou Edge). Vous indiquez qui parle (Médecin / Patient), puis vous corrigez la transcription avant l'analyse. L'audio est traité par le service de reconnaissance du navigateur ; pour de vraies données de patients, utilisez le serveur Whisper local.
-- **Micro, wolof** : nécessite le serveur Kiriku-Wolof-ASR (voir plus bas). La dictée du navigateur ne reconnaît pas le wolof.
+- **Micro, wolof** : nécessite ElevenLabs Scribe (ou le serveur Kiriku-Wolof-ASR). La dictée du navigateur ne reconnaît pas le wolof.
 - **Saisie** : vous tapez ou collez la transcription.
 - **Analyse** : moteur de règles pour l'extraction, base de connaissances pour les pistes, glossaire pour la traduction wolof → français.
 
@@ -51,7 +51,7 @@ Le document d'accès pour le correcteur (URL, identifiants, scénario) est dans 
 | Cahier des charges | Où dans le code |
 |---|---|
 | A. Gestion de la consultation, consentement | `src/app/(app)/consultations/nouvelle`, `src/lib/consultations.ts` |
-| B. Reconnaissance vocale (Whisper FR, Kiriku-Wolof-ASR WO) | `src/lib/agent/asr.ts`, `services/asr/` |
+| B. Reconnaissance vocale (ElevenLabs Scribe FR/WO, ou Whisper / Kiriku auto-hébergés) | `src/lib/agent/asr.ts`, `src/lib/scribe.ts`, `src/lib/client/scribe.ts`, `services/asr/` |
 | C. Traduction wolof → français | `src/lib/agent/translate.ts` |
 | D. Extraction des informations médicales | `src/lib/agent/extract.ts` |
 | E. Génération du SOAP | `src/lib/agent/soap.ts` |
@@ -84,7 +84,24 @@ Le modèle par défaut est `claude-opus-5-5`. La sortie est structurée et valid
 transcription, pseudonymisée, est alors envoyée à l'API Anthropic. Vérifiez la conformité avec la CDP
 (loi 2008-12) avant d'utiliser de vraies données.
 
-## Service de reconnaissance vocale (facultatif)
+## Reconnaissance vocale : ElevenLabs Scribe (recommandé)
+
+Ajoutez dans Vercel (ou `.env.local`) :
+
+```
+ELEVENLABS_API_KEY=...
+```
+
+Effets :
+- **wolof activé** : choix « Wolof » et « Détection auto » au début de la consultation ;
+- le **micro** enregistre la consultation ; à l'arrêt, l'audio est transcrit par Scribe (`scribe_v2`, modifiable par `ELEVENLABS_STT_MODEL`) ;
+- les **voix sont séparées** (diarisation) et attribuées au Médecin / Patient d'après ce que dit chaque voix ; le praticien relit, corrige ou inverse avant l'analyse ;
+- en **détection auto**, Scribe identifie la langue ; en wolof, Claude traduit ensuite en français avant l'extraction et le SOAP ;
+- le **français** passe aussi par Scribe (l'audio ne transite plus par la dictée du navigateur). `KS_ASR_FR=browser` garde la dictée du navigateur pour le français.
+
+Fonctionnement : le serveur crée un **jeton à usage unique** (15 min) et le navigateur envoie l'audio **directement à ElevenLabs**. La clé ne quitte jamais le serveur, et l'audio ne passe ni par Vercel (limité à 4,5 Mo par requête) ni par la base : il n'est jamais stocké. ⚠️ L'audio est traité par ElevenLabs : vérifiez la conformité avec la CDP (loi 2008-12) avant d'utiliser de vraies données. La précision en wolof est classée « modérée » par ElevenLabs : la relecture par le praticien reste indispensable.
+
+## Service de reconnaissance vocale auto-hébergé (facultatif)
 
 ```bash
 cd services/asr
@@ -154,11 +171,12 @@ Dans les deux cas :
 | `KS_ADMIN_EMAILS` | adresses des administrateurs (page Administration), séparées par des virgules |
 | `RESEND_API_KEY`, `KS_MAIL_FROM` | facultatif : envoi des e-mails de réinitialisation du mot de passe |
 | `ANTHROPIC_API_KEY` | analyse par Claude (recommandé) |
+| `ELEVENLABS_API_KEY` | reconnaissance vocale ElevenLabs Scribe : active le wolof et la séparation des voix |
 
 3. Cliquez sur **Deploy**. Ensuite, chaque `git push` sur `main` redéploie automatiquement.
 
 **À savoir :**
 - Les tables Supabase ont la sécurité par ligne (RLS) activée, sans règle d'accès : seule l'application, connectée directement à Postgres, peut lire et écrire. L'API publique de Supabase ne voit rien.
 - Le micro fonctionne en ligne : Vercel sert le site en HTTPS. La dictée passe par le navigateur (Chrome ou Edge).
-- Les serveurs Whisper et Kiriku ne tournent pas sur Vercel. Il faut les héberger ailleurs (machine avec GPU), puis renseigner `ASR_FR_URL` et `ASR_WO_URL`.
+- Avec ElevenLabs Scribe, aucun serveur supplémentaire n'est nécessaire. Les serveurs Whisper et Kiriku, eux, ne tournent pas sur Vercel : il faut les héberger ailleurs (machine avec GPU), puis renseigner `ASR_FR_URL` et `ASR_WO_URL`.
 - Prototype : avant d'y mettre de vraies données de patients, vérifiez la conformité avec la loi 2008-12 (CDP) et choisissez un hébergement adapté.

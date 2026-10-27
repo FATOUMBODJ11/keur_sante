@@ -10,6 +10,7 @@ import {
   LoaderCircle,
   Mic,
   Pause,
+  ArrowLeftRight,
   Play,
   RotateCcw,
   Thermometer,
@@ -24,11 +25,18 @@ import { AgentSteps } from "@/components/ui";
 import { Waves } from "@/components/Waves";
 import { dt } from "@/lib/client/api";
 import { dictationSupported, startDictation } from "@/lib/client/dictation";
+import { transcribeWithScribe } from "@/lib/client/scribe";
 import { inferSpeaker } from "@/lib/agent/speakers";
 import { LANG } from "@/lib/client/format";
-import type { Consultation, LangPref, Providers, Speaker } from "@/lib/types";
+import type { Consultation, Lang, LangPref, Providers, Speaker } from "@/lib/types";
 
-type Job = { kind: "audio"; blob: Blob } | { kind: "transcript"; text: string; source: "dictee" | "texte" };
+type Job =
+  | { kind: "audio"; blob: Blob }
+  | { kind: "transcript"; text: string; source: "dictee" | "texte" | "audio"; language?: { language: Lang; language_confidence: number } };
+
+/** Inverse les rôles Médecin et Patient dans une transcription préfixée. */
+const swapSpeakers = (text: string) =>
+  text.replace(/^(Médecin|Patient)\s*:/gm, (_m, who: string) => (who === "Médecin" ? "Patient:" : "Médecin:"));
 
 const STEPS = ["Patient et consentement", "Capture", "Analyse par l'agent", "Validation"];
 
@@ -198,7 +206,7 @@ function PatientConsent({ onReady }: { onReady: (c: Consultation) => void }) {
                 [
                   ["auto", "Détection auto", "L'agent identifie la langue"],
                   ["fr", "Français", "Transcription directe"],
-                  ["wo", "Wolof", "Kiriku-Wolof-ASR puis traduction"],
+                  ["wo", "Wolof", "Transcription wolof puis traduction"],
                 ] as [LangPref, string, string][]
               )
                 .filter(([k]) => wolof || k === "fr")
@@ -333,14 +341,17 @@ function Capture({ consult, onDone }: { consult: Consultation; onDone: (j: Job) 
   const lang = consult.language_requested;
   const [providers, setProviders] = useState<Providers | null>(null);
   const canDictate = useDictationSupport() && lang !== "wo";
-  const serverAsr = providers
-    ? lang === "fr"
+  // ElevenLabs Scribe : enregistrement envoyé à la fin, voix séparées (français, wolof, détection auto).
+  const scribe = providers ? (lang === "fr" ? providers.scribe_fr : providers.scribe_wo) : false;
+  const serverAsr = !providers || scribe
+    ? false
+    : lang === "fr"
       ? providers.asr_fr_ready
       : lang === "wo"
         ? providers.asr_wo_ready
-        : providers.asr_fr_ready || providers.asr_wo_ready
-    : false;
-  const micAvailable = serverAsr || canDictate;
+        : providers.asr_fr_ready || providers.asr_wo_ready;
+  const micAvailable = scribe || serverAsr || canDictate;
+  const records = scribe || serverAsr;
 
   const [mode, setMode] = useState<"mic" | "manual">("mic");
   const [live, setLive] = useState(false);
@@ -355,6 +366,9 @@ function Capture({ consult, onDone }: { consult: Consultation; onDone: (j: Job) 
   const [paused, setPaused] = useState(false);
   const [vitals, setVitals] = useState<Vitals>(EMPTY_VITALS);
   const [showVitals, setShowVitals] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [detected, setDetected] = useState<{ language: Lang; language_confidence: number } | null>(null);
+  const [pendingBlob, setPendingBlob] = useState<Blob | null>(null);
   const timer = useTimer(live && !paused);
 
   const speakerRef = useRef<SpeakerMode>("auto");
@@ -403,15 +417,16 @@ function Capture({ consult, onDone }: { consult: Consultation; onDone: (j: Job) 
       // Enregistrement complet pour le serveur ASR (Whisper / Kiriku-Wolof-ASR).
       let mr: MediaRecorder | null = null;
       const chunks: Blob[] = [];
-      if (serverAsr) {
-        mr = new MediaRecorder(stream);
+      if (records) {
+        // 32 kbit/s : largement suffisant pour la voix, et léger à envoyer (≈ 15 Mo par heure).
+        mr = new MediaRecorder(stream, scribe ? { audioBitsPerSecond: 32_000 } : undefined);
         mr.ondataavailable = (e) => e.data.size && chunks.push(e.data);
         mr.start(1000);
       }
       rec.current = { stream, ctx, mr, chunks, stopRaf: () => cancelAnimationFrame(raf) };
 
-      // Transcription en direct dans le navigateur (français).
-      if (canDictate) beginDictation();
+      // Transcription en direct dans le navigateur (français), sauf avec Scribe : l'audio ne part pas chez Google.
+      if (canDictate && !scribe) beginDictation();
       setPaused(false);
       setLive(true);
     } catch (e) {
@@ -448,7 +463,7 @@ function Capture({ consult, onDone }: { consult: Consultation; onDone: (j: Job) 
       setPaused(true);
     } else {
       if (r?.mr?.state === "paused") r.mr.resume();
-      if (canDictate) beginDictation();
+      if (canDictate && !scribe) beginDictation();
       setPaused(false);
     }
   }
@@ -475,6 +490,11 @@ function Capture({ consult, onDone }: { consult: Consultation; onDone: (j: Job) 
     setLive(false);
     setLevel(0);
 
+    if (scribe && blob && blob.size > 0) {
+      setPendingBlob(blob);
+      await runScribe(blob);
+      return;
+    }
     if (serverAsr && blob && blob.size > 0) {
       onDone({ kind: "audio", blob });
       return;
@@ -493,7 +513,30 @@ function Capture({ consult, onDone }: { consult: Consultation; onDone: (j: Job) 
     setPhase("review");
   }
 
+  /** Transcription Scribe, puis relecture par le praticien avant l'analyse. */
+  async function runScribe(blob: Blob) {
+    setError("");
+    setTranscribing(true);
+    try {
+      const r = await transcribeWithScribe(consult.id, blob);
+      if (!r.turns.length) {
+        setError("Aucune parole n'a été reconnue dans l'enregistrement. Vérifiez le micro et recommencez, ou utilisez la saisie.");
+        return;
+      }
+      setDetected(r.lang ? { language: r.lang, language_confidence: r.confidence } : null);
+      setDraft(r.turns.map((t) => (t.who ? `${LABEL[t.who] ?? "Patient"}: ${t.text}` : t.text)).join("\n"));
+      setPendingBlob(null);
+      setPhase("review");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setTranscribing(false);
+    }
+  }
+
   const restart = () => {
+    setPendingBlob(null);
+    setDetected(null);
     setSegments([]);
     setDraft("");
     setPhase("capture");
@@ -509,7 +552,9 @@ Médecin: ${vitalsLine}` : text);
     onDone(
       mode === "manual"
         ? { kind: "transcript", text: withVitals(manual), source: "texte" }
-        : { kind: "transcript", text: withVitals(draft), source: "dictee" },
+        : scribe
+          ? { kind: "transcript", text: withVitals(draft), source: "audio", language: detected ?? undefined }
+          : { kind: "transcript", text: withVitals(draft), source: "dictee" },
     );
 
   return (
@@ -542,7 +587,7 @@ Médecin: ${vitalsLine}` : text);
           <button
             className={`rec-btn ${live ? "live" : ""}`}
             onClick={onRecButton}
-            disabled={mode === "manual" || !micAvailable || phase === "review"}
+            disabled={mode === "manual" || !micAvailable || phase === "review" || transcribing}
             aria-label={live ? "Arrêter la consultation" : "Démarrer la capture"}
           >
             {live ? <Square size={26} fill="currentColor" /> : <Mic size={30} />}
@@ -558,7 +603,9 @@ Médecin: ${vitalsLine}` : text);
             </button>
           )}
           <span className="small" style={{ color: "rgba(255,255,255,.75)", textAlign: "center" }}>
-            {mode === "manual"
+            {transcribing
+              ? "Transcription de l'enregistrement en cours…"
+              : mode === "manual"
               ? "Saisie manuelle : le micro n'est pas utilisé"
               : !micAvailable
                 ? "Micro indisponible pour cette langue"
@@ -583,7 +630,7 @@ Médecin: ${vitalsLine}` : text);
               <Keyboard size={13} style={{ verticalAlign: -2 }} /> Saisie
             </button>
           </div>
-          {mode === "mic" && canDictate && !serverAsr && phase === "capture" && (
+          {mode === "mic" && canDictate && !records && phase === "capture" && (
             <div className="row" style={{ gap: 8 }}>
               <span className="tiny faint">Qui parle ?</span>
               <div className="seg" role="group" aria-label="Locuteur">
@@ -606,8 +653,8 @@ Médecin: ${vitalsLine}` : text);
                   <span>
                     {lang === "wo" ? (
                       <>
-                        La transcription du wolof nécessite le serveur <b>Kiriku-Wolof-ASR</b> (voir le README) : la dictée du
-                        navigateur ne reconnaît pas le wolof. En attendant, utilisez la <b>saisie</b>.
+    La transcription du wolof nécessite <b>ElevenLabs Scribe</b> (clé ELEVENLABS_API_KEY, voir le README) : la dictée
+                        du navigateur ne reconnaît pas le wolof. En attendant, utilisez la <b>saisie</b>.
                       </>
                     ) : (
                       <>
@@ -615,6 +662,15 @@ Médecin: ${vitalsLine}` : text);
                         Whisper n&apos;est pas configuré. Utilisez la <b>saisie</b>.
                       </>
                     )}
+                  </span>
+                </div>
+              ) : scribe ? (
+                <div className="info-box">
+                  <Info size={15} />
+                  <span>
+                    L&apos;enregistrement est transcrit à la fin par <b>{lang === "fr" ? providers.asr_fr : providers.asr_wo}</b>
+                    {lang === "auto" ? ", qui identifie la langue" : ""}. Les voix sont séparées automatiquement (Médecin / Patient) ;
+                    vous relisez et corrigez avant l&apos;analyse. L&apos;audio n&apos;est pas conservé.
                   </span>
                 </div>
               ) : serverAsr ? (
@@ -641,11 +697,33 @@ Médecin: ${vitalsLine}` : text);
 
             {phase === "capture" ? (
               <div className="live-transcript" ref={pane} aria-live="polite">
-                {segments.length === 0 && !interim && (
+                {transcribing ? (
                   <div className="empty" style={{ padding: 30 }}>
-                    <FileText size={22} />
-                    <span>La transcription apparaît ici, tour de parole par tour de parole.</span>
+                    <LoaderCircle size={22} className="spin" />
+                    <span>Transcription et séparation des voix en cours… (quelques secondes à une minute)</span>
                   </div>
+                ) : pendingBlob && error ? (
+                  <div className="empty" style={{ padding: 30 }}>
+                    <span>L&apos;enregistrement est conservé dans cette page : vous pouvez relancer la transcription.</span>
+                    <button className="btn btn-primary btn-sm" onClick={() => runScribe(pendingBlob)}>
+                      <RotateCcw size={14} />
+                      Réessayer la transcription
+                    </button>
+                  </div>
+                ) : (
+                  segments.length === 0 &&
+                  !interim && (
+                    <div className="empty" style={{ padding: 30 }}>
+                      <FileText size={22} />
+                      <span>
+                        {scribe
+                          ? live
+                            ? "Enregistrement en cours. La transcription apparaîtra à la fin de la consultation."
+                            : "La transcription apparaîtra ici à la fin de l'enregistrement, voix séparées."
+                          : "La transcription apparaît ici, tour de parole par tour de parole."}
+                      </span>
+                    </div>
+                  )
                 )}
                 {segments.map((s, i) => (
                   <div key={i} className="turn enter">
@@ -675,7 +753,16 @@ Médecin: ${vitalsLine}` : text);
                   Transcription à vérifier
                 </label>
                 <textarea id="draft" className="textarea" style={{ minHeight: 260, flex: 1 }} value={draft} onChange={(e) => setDraft(e.target.value)} />
-                <p className="tiny faint">Corrigez les mots mal reconnus et les locuteurs (« Médecin: », « Patient: ») avant l&apos;analyse.</p>
+                <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                  <p className="tiny faint" style={{ margin: 0 }}>
+                    Corrigez les mots mal reconnus et les locuteurs (« Médecin: », « Patient: ») avant l&apos;analyse.
+                    {detected && lang === "auto" ? ` Langue détectée : ${LANG[detected.language]}.` : ""}
+                  </p>
+                  <button className="btn btn-quiet btn-sm" onClick={() => setDraft(swapSpeakers)} title="Échanger Médecin et Patient sur toutes les lignes">
+                    <ArrowLeftRight size={13} />
+                    Inverser Médecin / Patient
+                  </button>
+                </div>
               </div>
             )}
           </>
@@ -774,7 +861,7 @@ function Processing({ consult, job, onRetry }: { consult: Consultation; job: Job
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    (job.kind === "transcript" ? dt.submitTranscript(consult.id, job.text, job.source) : dt.uploadAudio(consult.id, job.blob))
+    (job.kind === "transcript" ? dt.submitTranscript(consult.id, job.text, job.source, job.language) : dt.uploadAudio(consult.id, job.blob))
       .then(setResult)
       .catch((e) => setError((e as Error).message));
   }, [consult.id, job]);

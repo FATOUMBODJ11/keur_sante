@@ -27,6 +27,8 @@ export interface AgentInput {
   languagePref: LangPref;
   /** Fournisseur de la transcription quand elle arrive déjà sous forme de texte. */
   transcriptProvider?: string;
+  /** Langue détectée sur l'audio par la reconnaissance vocale (utilisée en détection automatique). */
+  detectedLanguage?: { lang: Lang; confidence: number; provider: string };
   /** Dossier du patient (âge, allergies, antécédents…), pris en compte par l'analyse. */
   patient?: PatientContext;
 }
@@ -91,23 +93,22 @@ export async function runAgent(input: AgentInput): Promise<AgentOutput> {
       confidence = 1;
       trace.set("detection_langue", { status: "done", provider: "choix du praticien", detail: lang, duration_ms: 0 });
       const t0 = performance.now();
-      const text = await transcribe(audio, lang);
-      transcript = splitSentences(text);
+      transcript = await transcribe(audio, lang);
       trace.set("reconnaissance_vocale", { status: "done", provider: asrProviderName(lang), duration_ms: since(t0), detail: `${transcript.length} segments` });
     } else {
-      if (!cfg.fr && !cfg.wo) {
-        throw new AsrUnavailableError("Reconnaissance vocale non configurée (ASR_FR_URL / ASR_WO_URL).");
+      if (!cfg.fr && !cfg.wo && !cfg.scribe) {
+        throw new AsrUnavailableError("Reconnaissance vocale non configurée (ELEVENLABS_API_KEY, ou ASR_FR_URL / ASR_WO_URL).");
       }
-      // Détection automatique : passe Whisper, puis Kiriku-Wolof-ASR si l'on reconnaît du wolof.
+      // Détection automatique : première passe en français, puis en wolof si l'on reconnaît du wolof.
       const t0 = performance.now();
-      const firstLang: Lang = cfg.fr ? "fr" : "wo";
-      transcript = splitSentences(await transcribe(audio, firstLang));
+      const firstLang: Lang = cfg.fr || cfg.scribeFr ? "fr" : "wo";
+      transcript = await transcribe(audio, firstLang);
       const guess = detectLanguage(transcript);
       lang = guess.lang;
       confidence = guess.confidence;
       let provider = asrProviderName(firstLang);
-      if (lang !== firstLang && (lang === "fr" ? cfg.fr : cfg.wo)) {
-        transcript = splitSentences(await transcribe(audio, lang));
+      if (lang !== firstLang && asrProviderName(lang) !== "non configuré") {
+        transcript = await transcribe(audio, lang);
         provider = `${provider} → ${asrProviderName(lang)}`;
       }
       trace.set("detection_langue", { status: "done", provider: "lexical", duration_ms: 0, detail: `${lang} (confiance ${confidence.toFixed(2)})` });
@@ -116,7 +117,12 @@ export async function runAgent(input: AgentInput): Promise<AgentOutput> {
   } else {
     transcript = input.turns ?? [];
     const guess = detectLanguage(transcript);
-    if (input.languagePref === "auto") {
+    if (input.languagePref === "auto" && input.detectedLanguage) {
+      // Langue identifiée par la reconnaissance vocale (Scribe) sur l'audio.
+      lang = input.detectedLanguage.lang;
+      confidence = input.detectedLanguage.confidence;
+      trace.set("detection_langue", { status: "done", provider: input.detectedLanguage.provider, duration_ms: 0, detail: `${lang} (confiance ${confidence.toFixed(2)})` });
+    } else if (input.languagePref === "auto") {
       lang = guess.lang;
       confidence = guess.confidence;
       trace.set("detection_langue", { status: "done", provider: "lexical", duration_ms: 0, detail: `${lang} (confiance ${confidence.toFixed(2)})` });
@@ -200,9 +206,17 @@ export function providersInfo(): Providers {
   const asr = asrConfig();
   const wolof = wolofEnabled();
   return {
-    asr_fr: asr.fr ? `Whisper (${asr.frModel})` : "Dictée du navigateur",
-    asr_wo: !wolof ? "En pause" : asr.wo ? "Kiriku-Wolof-ASR (AI Hub Senegal)" : "Serveur Kiriku-Wolof-ASR non configuré",
-    kiriku_model: wolof && asr.wo ? process.env.KIRIKU_MODEL_ID || "AIHubSN/Kiriku-Wolof-ASR" : null,
+    asr_fr: asr.scribeFr ? asrProviderName("fr") : asr.fr ? `Whisper (${asr.frModel})` : "Dictée du navigateur",
+    asr_wo: !wolof
+      ? "En pause"
+      : asr.scribe
+        ? asrProviderName("wo")
+        : asr.wo
+          ? "Kiriku-Wolof-ASR (AI Hub Senegal)"
+          : "Reconnaissance vocale wolof non configurée",
+    kiriku_model: wolof && !asr.scribe && asr.wo ? process.env.KIRIKU_MODEL_ID || "AIHubSN/Kiriku-Wolof-ASR" : null,
+    scribe_fr: asr.scribeFr,
+    scribe_wo: wolof && asr.scribe,
     translation: !wolof ? "Non utilisée (français seul)" : llmEnabled() ? llmLabel() : "Glossaire wolof → français",
     llm: llmEnabled() ? "Claude" : "Règles hors-ligne",
     llm_model: llmEnabled() ? LLM_MODEL : null,

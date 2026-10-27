@@ -118,8 +118,9 @@ export function Shell({ children }: { children: ReactNode }) {
             <div className="demo-banner">
               <Sparkles size={15} />
               <span>
-                <b>Mode hors-ligne.</b> Extraction par règles et base de connaissances ; transcription française par la
-                dictée du navigateur. Configurez Claude et le serveur Whisper pour la version complète.
+                <b>Mode hors-ligne.</b> Extraction par règles et base de connaissances
+                {providers?.scribe_fr ? "" : " ; transcription française par la dictée du navigateur"}. Configurez Claude
+                (ANTHROPIC_API_KEY) pour la version complète.
                 {providers && !providers.wolof_enabled && " Le wolof est en pause."}
               </span>
             </div>

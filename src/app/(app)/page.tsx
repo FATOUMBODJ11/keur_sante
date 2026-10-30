@@ -1,13 +1,12 @@
 "use client";
 
-import { Activity, ArrowRight, BarChart3, Bot, CircleCheck, ClipboardCheck, FileClock, Mic, Percent, Stethoscope } from "lucide-react";
+import { Activity, ArrowRight, Bot, CircleCheck, FileClock, Mic } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useState } from "react";
 import { useAuth } from "@/components/providers";
-import { LangTag, Loading, StatusBadge } from "@/components/ui";
-import { Waves } from "@/components/Waves";
-import { dt } from "@/lib/client/api";
+import { DotRing, LangTag, Loading, StatusBadge } from "@/components/ui";
+import { dt, type SurveyResults } from "@/lib/client/api";
 import { cap, fmtRelative, profile } from "@/lib/client/format";
 import type { Consultation, Providers, Stats } from "@/lib/types";
 
@@ -44,6 +43,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [list, setList] = useState<Consultation[] | null>(null);
   const [providers, setProviders] = useState<Providers | null>(null);
+  const [survey, setSurvey] = useState<SurveyResults | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -54,6 +54,7 @@ export default function Dashboard() {
         setProviders(p);
       })
       .catch((e) => setError(e.message));
+    dt.surveys().then(setSurvey).catch(() => {});
   }, []);
 
   if (error) return <div className="error-box">{error}</div>;
@@ -67,14 +68,16 @@ export default function Dashboard() {
   const rate = decided ? d.accepted / decided : null;
   const n = toReview.length;
 
+  const last = list[0] ?? null;
+  const vitals = last?.extraction?.constantes.slice(0, 4) ?? [];
+  const weeks = stats.par_semaine ?? [];
+  const maxWeek = Math.max(1, ...weeks.map((x) => x.n));
+
   return (
     <div className="stack-lg">
-      <section className="welcome">
-        <Waves density={0.8} tilt={0.55} zoom={1.1} gain={1.6} size={10} offsetX={0.8} />
+      <section className="dash-head">
         <div>
-          <div className="eyebrow" style={{ color: "#A7E9A7" }}>
-            {cap(new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" }))}
-          </div>
+          <div className="eyebrow">{cap(new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" }))}</div>
           <h1>
             {greeting()}, {user.full_name}
           </h1>
@@ -89,44 +92,92 @@ export default function Dashboard() {
         </button>
       </section>
 
-      <div className="grid g-4">
-        <div className="card stat">
-          <span className="stat-label">
-            <Stethoscope size={15} />
-            Consultations
-          </span>
-          <span className="stat-value">{stats.total}</span>
-          <span className="stat-sub">documentées avec Keur Santé</span>
+      <div className="dash-grid">
+        <div className="card tile">
+          <div className="tile-title">
+            Activité
+            <span className="tiny faint" style={{ fontFamily: "var(--font)" }}>
+              8 dernières semaines
+            </span>
+          </div>
+          <div className="week-bars">
+            {weeks.map((w) => (
+              <div key={w.semaine} title={`Semaine du ${w.semaine} : ${w.n} consultation(s)`}>
+                <span className="tiny num faint">{w.n || ""}</span>
+                <i className={w.n ? "" : "zero"} style={{ height: `${Math.max(w.n ? 8 : 4, (w.n / maxWeek) * 100)}%` }} />
+              </div>
+            ))}
+          </div>
+          <div className="tile-rows">
+            <div>
+              <span>Consultations</span>
+              <b>{stats.total}</b>
+            </div>
+            <div>
+              <span>À valider</span>
+              <b>{st.review || 0}</b>
+            </div>
+            <div>
+              <span>Validées</span>
+              <b>{validated}</b>
+            </div>
+            <div>
+              <span>Patients suivis</span>
+              <b>{stats.patients}</b>
+            </div>
+          </div>
         </div>
-        <div className="card stat">
-          <span className="stat-label">
-            <FileClock size={15} />À valider
-          </span>
-          <span className="stat-value">{st.review || 0}</span>
-          <span className="stat-sub">en attente de votre relecture</span>
+
+        <div className="card tile">
+          <div className="tile-title">Pistes IA retenues</div>
+          <div className="ring-wrap">
+            <DotRing value={rate ?? 0} />
+            <div className="ring-label">
+              <b>{rate == null ? "—" : `${Math.round(rate * 100)} %`}</b>
+              <span>acceptées par vous</span>
+            </div>
+          </div>
+          <DecisionsBar d={d} />
         </div>
-        <div className="card stat">
-          <span className="stat-label">
-            <ClipboardCheck size={15} />
-            Validées
-          </span>
-          <span className="stat-value">{validated}</span>
-          <span className="stat-sub">
-            dont {st.archived || 0} archivée{(st.archived || 0) > 1 ? "s" : ""}
-          </span>
-        </div>
-        <div className="card stat">
-          <span className="stat-label">
-            <Percent size={15} />
-            Pistes IA retenues
-          </span>
-          <span className="stat-value">
-            {rate == null ? "—" : Math.round(rate * 100)}
-            <small>{rate == null ? "" : "%"}</small>
-          </span>
-          <span className="stat-sub">
-            {d.accepted} acceptée{d.accepted > 1 ? "s" : ""} · {d.rejected} rejetée{d.rejected > 1 ? "s" : ""}
-          </span>
+
+        <div className="card tile">
+          <div className="tile-title">
+            Dernière consultation
+            {last && <StatusBadge status={last.status} />}
+          </div>
+          {last ? (
+            <>
+              <div>
+                <div className="strong">{cap(last.motif) || "Motif à préciser"}</div>
+                <div className="tiny faint">
+                  {last.patient.code} · {profile(last.patient)} · {fmtRelative(last.created_at)}
+                </div>
+              </div>
+              {vitals.length ? (
+                <div className="vitals">
+                  {vitals.map((v) => (
+                    <div key={v.nom}>
+                      <span>{cap(v.nom)}</span>
+                      <b>
+                        {v.valeur}
+                        {v.unite ? <small className="muted" style={{ fontSize: 12, fontWeight: 500 }}> {v.unite}</small> : null}
+                      </b>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="small muted">Aucune constante relevée dans cette consultation.</p>
+              )}
+              <Link href={`/consultations/${last.id}`} className="btn btn-ghost btn-sm" style={{ marginTop: "auto", alignSelf: "flex-start" }}>
+                Ouvrir le compte rendu
+                <ArrowRight size={13} />
+              </Link>
+            </>
+          ) : (
+            <div className="empty" style={{ padding: 20 }}>
+              <span>Aucune consultation pour l&apos;instant.</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -211,19 +262,37 @@ export default function Dashboard() {
           <div className="card">
             <div className="card-head">
               <h2>
-                <CircleCheck size={16} />
-                Vos décisions sur les pistes IA
+                <Activity size={16} />
+                Indicateurs cliniques
               </h2>
             </div>
-            <div className="card-pad stack">
-              <DecisionsBar d={d} />
-              <p className="small muted">
-                Chaque piste diagnostique proposée par l&apos;agent doit être acceptée ou rejetée avant la validation du compte
-                rendu.
-              </p>
+            <div className="facts">
+              <div className="fact">
+                <span>Délai médian jusqu&apos;à la validation</span>
+                <div className="strong">{stats.delai_validation_median === null ? "—" : `${stats.delai_validation_median} min`}</div>
+              </div>
+              <div className="fact">
+                <span>Questionnaire SUS</span>
+                <div className="strong">{survey?.sus_moyen == null ? "—" : `${survey.sus_moyen} / 100`}{survey?.n ? <span className="tiny faint"> · {survey.n} réponse{survey.n > 1 ? "s" : ""}</span> : null}</div>
+              </div>
+              <div className="fact">
+                <span>Diagnostics les plus retenus</span>
+                <div>
+                  {(stats.top_diagnostics ?? []).length === 0 ? (
+                    <span className="faint">Pas encore de diagnostic retenu</span>
+                  ) : (
+                    stats.top_diagnostics.map((d) => (
+                      <div key={d.label} className="row small" style={{ gap: 8 }}>
+                        <span style={{ flex: 1 }}>{d.label}</span>
+                        <b className="num">{d.n}</b>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
           </div>
-          <div className="card">
+            <div className="card">
             <div className="card-head">
               <h2>
                 <Bot size={16} />
@@ -277,66 +346,18 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid g-2">
-        <div className="card">
-          <div className="card-head">
-            <h2>
-              <BarChart3 size={16} />
-              Activité des 8 dernières semaines
-            </h2>
-            <span className="tiny faint">
-              {stats.patients} patient{stats.patients > 1 ? "s" : ""} suivi{stats.patients > 1 ? "s" : ""}
-            </span>
-          </div>
-          <div className="card-pad">
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 140 }}>
-              {(stats.par_semaine ?? []).map((w) => {
-                const max = Math.max(1, ...(stats.par_semaine ?? []).map((x) => x.n));
-                return (
-                  <div key={w.semaine} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, height: "100%" }}>
-                    <span className="tiny num">{w.n || ""}</span>
-                    <div style={{ flex: 1, width: "100%", display: "flex", alignItems: "flex-end" }}>
-                      <i
-                        style={{ display: "block", width: "100%", height: `${(w.n / max) * 100}%`, minHeight: w.n ? 4 : 2, borderRadius: 6, background: w.n ? "var(--primary)" : "var(--surface-3)" }}
-                        title={`Semaine du ${w.semaine} : ${w.n} consultation(s)`}
-                      />
-                    </div>
-                    <span className="tiny faint">{new Date(w.semaine).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+      <div className="card cta-tile">
+        <div>
+          <div className="tile-title">La validation clinique</div>
+          <p className="small muted" style={{ marginTop: 4, maxWidth: "62ch" }}>
+            Comparez les résultats de l&apos;agent aux cas annotés par des médecins : symptômes retrouvés, diagnostics proposés,
+            accord entre annotateurs.
+          </p>
         </div>
-        <div className="card">
-          <div className="card-head">
-            <h2>
-              <Activity size={16} />
-              Indicateurs cliniques
-            </h2>
-          </div>
-          <div className="facts">
-            <div className="fact">
-              <span>Délai médian jusqu&apos;à la validation</span>
-              <div className="strong">{stats.delai_validation_median === null ? "—" : `${stats.delai_validation_median} min`}</div>
-            </div>
-            <div className="fact">
-              <span>Diagnostics les plus retenus</span>
-              <div>
-                {(stats.top_diagnostics ?? []).length === 0 ? (
-                  <span className="faint">Pas encore de diagnostic retenu</span>
-                ) : (
-                  stats.top_diagnostics.map((d) => (
-                    <div key={d.label} className="row small" style={{ gap: 8 }}>
-                      <span style={{ flex: 1 }}>{d.label}</span>
-                      <b className="num">{d.n}</b>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+        <Link href="/evaluation" className="btn btn-primary">
+          Ouvrir la validation
+          <ArrowRight size={15} />
+        </Link>
       </div>
 
       <div className="card">

@@ -2,7 +2,6 @@
 
 import {
   ArrowRight,
-  ArrowUpRight,
   AudioLines,
   CircleHelp,
   Clock,
@@ -27,9 +26,8 @@ import { BrandMark, ThemeSeg } from "@/components/ui";
 import { Waves } from "@/components/Waves";
 import "../accueil.css";
 
-/** Photo libre de droits (licence Unsplash) : Ato Aikins, https://unsplash.com/photos/TPT4pevJEmQ */
-const HERO_PHOTO = "https://images.unsplash.com/photo-1678695972687-033fa0bdbac9?w=900&q=80&auto=format&fit=crop";
-const PHOTO_CREDIT = "https://unsplash.com/fr/photos/une-femme-vetue-dun-manteau-blanc-et-dun-stethoscope-TPT4pevJEmQ";
+/** Image du bandeau (public/accueil.jpg), fournie par la porteuse du projet. */
+const HERO_PHOTO = "/accueil.jpg";
 
 /** Anneau en pointillés : `value` entre 0 et 1. */
 function DotRing({ value, dots = 36 }: { value: number; dots?: number }) {
@@ -319,7 +317,7 @@ export default function Landing() {
             <div className="hero-visual">
               <div className="hero-photo">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={HERO_PHOTO} alt="Une médecin souriante en blouse blanche, un stéthoscope autour du cou" />
+                <img src={HERO_PHOTO} alt="Un cœur rouge et un stéthoscope posés sur un bureau de consultation" />
               </div>
               <span className="chip-float" style={{ top: 70, left: "4%" }}>
                 <span className="ic">
@@ -571,13 +569,7 @@ export default function Landing() {
           </div>
           <div className="legal">
             <span>© Keur Santé · Prototype, ne remplace pas un avis médical.</span>
-            <span>
-              Photo :{" "}
-              <a href={PHOTO_CREDIT} target="_blank" rel="noreferrer">
-                Ato Aikins sur Unsplash
-              </a>{" "}
-              <ArrowUpRight size={11} style={{ verticalAlign: -1 }} />
-            </span>
+            <span>Mastère Stratégie Digitale · ISM Digital Campus</span>
           </div>
         </footer>
       </div>

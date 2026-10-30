@@ -559,17 +559,8 @@ export default function Landing() {
               </li>
             </ul>
           </div>
-          <div>
-            <h4>Projet</h4>
-            <ul>
-              <li>Mastère Stratégie Digitale</li>
-              <li>ISM Digital Campus</li>
-              <li>Prototype de recherche</li>
-            </ul>
-          </div>
           <div className="legal">
             <span>© Keur Santé · Prototype, ne remplace pas un avis médical.</span>
-            <span>Mastère Stratégie Digitale · ISM Digital Campus</span>
           </div>
         </footer>
       </div>

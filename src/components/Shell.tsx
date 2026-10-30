@@ -127,7 +127,7 @@ export function Shell({ children }: { children: ReactNode }) {
           )}
           {children}
           <footer className="tiny faint" style={{ textAlign: "center", padding: "24px 0 8px" }}>
-            Keur Santé · Prototype — Mastère Stratégie Digitale, ISM Digital Campus ·{" "}
+            Keur Santé ·{" "}
             <Link href="/confidentialite">Confidentialité</Link>
           </footer>
         </main>

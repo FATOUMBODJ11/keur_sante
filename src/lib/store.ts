@@ -66,7 +66,17 @@ function pgBackend(url: string): Backend {
   const local = /@(localhost|127\.0\.0\.1)[:/]/.test(url);
   const sql = postgres(url, { prepare: false, ssl: local ? false : "require", max: 3, idle_timeout: 20, connect_timeout: 15 });
   let ready: Promise<void> | null = null;
-  const init = () => (ready ??= sql.unsafe(SCHEMA_SQL).then(() => undefined));
+  // Le schéma n'est créé que s'il manque : relancer « alter table » à chaque démarrage à froid
+  // provoquait des verrous mortels (deadlock) entre instances Vercel simultanées.
+  // En cas d'échec, la promesse est oubliée pour que la requête suivante réessaie.
+  const init = () =>
+    (ready ??= (async () => {
+      const [row] = await sql`select to_regclass('ks_docs') is not null and to_regclass('ks_counters') is not null as ok`;
+      if (!row?.ok) await sql.unsafe(SCHEMA_SQL);
+    })().catch((err) => {
+      ready = null;
+      throw err;
+    }));
 
   return {
     async get<T>(col: Collection, id: string) {
@@ -237,7 +247,10 @@ function ensureSeed() {
       passwordHash: hashPassword("keursante"),
     };
     await backend().put("users", demo.id, demo, demo.email);
-  })());
+  })().catch((err) => {
+    seeded = null;
+    throw err;
+  }));
 }
 
 const now = () => new Date().toISOString();
@@ -352,6 +365,9 @@ export const db = {
     const next = { ...c, ...patch, updated_at: now() };
     await backend().put("consultations", id, next, next.doctor_id);
     return next;
+  },
+  async deleteConsultation(id: string) {
+    return backend().remove("consultations", id);
   },
 
   /* Jeu de cas annotés (partagé) */

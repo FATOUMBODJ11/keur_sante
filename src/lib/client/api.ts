@@ -124,6 +124,7 @@ export const dt = {
   editSoap: (id: string, soap: Soap) => call<Consultation>(`/api/consultations/${id}/soap`, { method: "PATCH", json: soap }),
   validate: (id: string) => call<Consultation>(`/api/consultations/${id}/validate`, { method: "POST" }),
   archive: (id: string) => call<Consultation>(`/api/consultations/${id}/archive`, { method: "POST" }),
+  deleteConsultation: (id: string) => call(`/api/consultations/${id}`, { method: "DELETE" }),
   exportText: (id: string) => call<{ text: string }>(`/api/consultations/${id}/export`).then((r) => r.text),
 
   listPatients: () => call<PatientRow[]>("/api/patients"),

@@ -20,6 +20,7 @@ import {
   Save,
   ShieldCheck,
   Sparkles,
+  Trash2,
   TriangleAlert,
   X,
 } from "lucide-react";
@@ -215,6 +216,7 @@ export default function ReviewPage() {
   const [error, setError] = useState("");
   const [exported, setExported] = useState<string | null>(null);
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const load = useCallback(
     () =>
@@ -296,6 +298,38 @@ export default function ReviewPage() {
     await run("validate", () => dt.validate(c.id), "Compte rendu validé");
   };
   const archive = () => run("archive", () => dt.archive(c.id), "Consultation archivée").then(() => setConfirmArchive(false));
+  const remove = async () => {
+    if (await run("delete", () => dt.deleteConsultation(c.id).then(() => true), "Consultation supprimée")) router.push("/consultations");
+    else setConfirmDelete(false);
+  };
+  // Suppression d'une consultation ouverte par erreur (sauf archivée), disponible dans tous les états.
+  const deleteButton = c.status !== "archived" && (
+    <button className="btn btn-ghost btn-sm" style={{ color: "var(--danger)" }} onClick={() => setConfirmDelete(true)} disabled={!!busy}>
+      <Trash2 size={14} />
+      Supprimer
+    </button>
+  );
+  const deleteModal = confirmDelete && (
+    <Modal
+      title="Supprimer la consultation ?"
+      onClose={() => setConfirmDelete(false)}
+      footer={
+        <>
+          <button className="btn btn-ghost" onClick={() => setConfirmDelete(false)}>
+            Annuler
+          </button>
+          <button className="btn btn-danger" onClick={remove} disabled={busy === "delete"}>
+            {busy === "delete" ? <LoaderCircle size={15} className="spin" /> : <Trash2 size={15} />}
+            Supprimer définitivement
+          </button>
+        </>
+      }
+    >
+      <p className="muted">
+        La transcription, le compte rendu et les pistes de cette consultation ({c.patient.code}) seront effacés. Cette action est irréversible.
+      </p>
+    </Modal>
+  );
   const doExport = () =>
     run("export", async () => {
       setExported(await dt.exportText(c.id));
@@ -311,7 +345,10 @@ export default function ReviewPage() {
               <LoaderCircle size={16} className="spin" />
               {c.status === "recording" ? "Consultation sans capture" : "Analyse en cours"}
             </h2>
-            <StatusBadge status={c.status} />
+            <div className="row wrap">
+              <StatusBadge status={c.status} />
+              {c.status === "recording" && deleteButton}
+            </div>
           </div>
           <div className="card-pad stack">
             {c.status === "recording" ? (
@@ -321,6 +358,7 @@ export default function ReviewPage() {
             )}
           </div>
         </div>
+        {deleteModal}
       </>
     );
   }
@@ -334,6 +372,10 @@ export default function ReviewPage() {
             <b>L&apos;analyse a échoué.</b> {c.error}
           </div>
         </div>
+        <div className="row" style={{ marginTop: 12 }}>
+          {deleteButton}
+        </div>
+        {deleteModal}
       </>
     );
   }
@@ -362,6 +404,7 @@ export default function ReviewPage() {
               Lecture seule
             </span>
           )}
+          {deleteButton}
         </div>
       </div>
 
@@ -749,6 +792,7 @@ export default function ReviewPage() {
           <p className="muted">Le compte rendu passera en lecture seule de façon définitive. Il restera consultable et exportable.</p>
         </Modal>
       )}
+      {deleteModal}
     </>
   );
 }

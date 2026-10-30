@@ -63,7 +63,7 @@ export default function Privacy() {
       <div className="auth-card" style={{ maxWidth: 640 }}>
         {SECTIONS.map(([title, items]) => (
           <div key={title} className="stack" style={{ gap: 6 }}>
-            <h2 style={{ fontSize: 21 }}>{title}</h2>
+            <h2 style={{ fontSize: 16 }}>{title}</h2>
             <ul className="small muted" style={{ margin: 0, paddingLeft: 18 }}>
               {items.map((x) => (
                 <li key={x} style={{ marginBottom: 4 }}>

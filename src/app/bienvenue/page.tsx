@@ -23,11 +23,34 @@ import Link from "next/link";
 import { useAuth, useAuthRedirect } from "@/components/providers";
 import { STRUCTURE_LABELS } from "@/lib/client/format";
 import type { StructureType } from "@/lib/types";
-import { BrandMark, DotRing, ThemeSeg } from "@/components/ui";
+import { BrandMark, ThemeSeg } from "@/components/ui";
+import { Waves } from "@/components/Waves";
+import "../accueil.css";
 
 /** Photo libre de droits (licence Unsplash) : Ato Aikins, https://unsplash.com/photos/TPT4pevJEmQ */
 const HERO_PHOTO = "https://images.unsplash.com/photo-1678695972687-033fa0bdbac9?w=900&q=80&auto=format&fit=crop";
 const PHOTO_CREDIT = "https://unsplash.com/fr/photos/une-femme-vetue-dun-manteau-blanc-et-dun-stethoscope-TPT4pevJEmQ";
+
+/** Anneau en pointillés : `value` entre 0 et 1. */
+function DotRing({ value, dots = 36 }: { value: number; dots?: number }) {
+  const on = Math.round(value * dots);
+  return (
+    <svg viewBox="0 0 120 120" aria-hidden="true">
+      {Array.from({ length: dots }, (_, i) => {
+        const a = (i / dots) * Math.PI * 2 - Math.PI / 2;
+        return (
+          <circle
+            key={i}
+            cx={+(60 + Math.cos(a) * 50).toFixed(2)}
+            cy={+(60 + Math.sin(a) * 50).toFixed(2)}
+            r={i < on ? 2.6 : 2}
+            fill={i < on ? "#CBE896" : "#ffffff40"}
+          />
+        );
+      })}
+    </svg>
+  );
+}
 
 function AuthForm() {
   const { login, register } = useAuth();
@@ -238,6 +261,7 @@ export default function Landing() {
     <div className="site">
       <div className="site-frame">
         <div className="site-top">
+          <Waves zoom={1.2} gain={1.5} size={11} offsetY={0.42} />
           <header className="site-nav">
             <Link href="/bienvenue" className="site-brand" aria-label="Keur Santé — accueil">
               <BrandMark size={36} />

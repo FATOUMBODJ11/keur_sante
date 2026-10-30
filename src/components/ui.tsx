@@ -25,19 +25,6 @@ export function BrandMark({ size = 42 }: { size?: number }) {
   );
 }
 
-/** Anneau en pointillés (style « Health Score ») : `value` entre 0 et 1. */
-export function DotRing({ value, dots = 36 }: { value: number; dots?: number }) {
-  const on = Math.round(value * dots);
-  return (
-    <svg viewBox="0 0 120 120" aria-hidden="true">
-      {Array.from({ length: dots }, (_, i) => {
-        const a = (i / dots) * Math.PI * 2 - Math.PI / 2;
-        return <circle key={i} cx={+(60 + Math.cos(a) * 50).toFixed(2)} cy={+(60 + Math.sin(a) * 50).toFixed(2)} r={i < on ? 2.6 : 2} fill={i < on ? "var(--sky)" : "var(--border-strong)"} />;
-      })}
-    </svg>
-  );
-}
-
 export function StatusBadge({ status }: { status: ConsultationStatus }) {
   const s = STATUS[status] ?? { label: status, cls: "b-grey" };
   return (
